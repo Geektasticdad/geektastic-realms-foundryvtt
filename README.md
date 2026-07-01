@@ -16,11 +16,13 @@ in the main repo for what's shipped and what's next, and
 [FOUNDRY_API.md](https://github.com/Geektasticdad/geektastic-realms/blob/main/Docs/FOUNDRY_API.md)
 for the API contract this module talks to.
 
-## Current stage: Stage 2 — connection handshake
+## Current stage: Stage 3 — compendium indexing
 
-This version registers your Geektastic Realms server URL and API token, and lets you
-verify the connection. It does not yet read compendiums, match content, or create NPCs
-— that's Stages 3 onward.
+This version registers your Geektastic Realms server URL and API token (Stage 2), and
+syncs your world's Item-type compendiums (weapons, equipment, feats, spells, classes,
+backgrounds, species, ...) to Geektastic Realms so it can match stat block features/
+items against what already exists (Stage 3). It does not yet create NPCs in Foundry —
+that's Stage 5 onward.
 
 ## Requirements
 
@@ -60,6 +62,21 @@ instance. On success you'll see the connected world's name and Geektastic Realms
 version; on failure, the specific error (missing settings, network error, invalid/
 revoked token, etc.).
 
+## Syncing compendiums
+
+In Module Settings, click **Sync Compendiums**. A dialog lists every Item-type
+compendium pack in your world (this is what feats, weapons, equipment, spells,
+classes, backgrounds, and species all are in the dnd5e system) — check the ones you
+want Geektastic Realms to know about and click **Sync Compendiums** in the dialog.
+Your selection is remembered for next time. Progress is shown live; a summary
+notification appears when done. Sync is on-demand only — nothing happens in the
+background, and re-syncing is safe any time (it upserts, it doesn't duplicate).
+
+View, search, and remove synced entries from the **Foundry VTT Connection** panel's
+"Synced Compendium" link on your world's dashboard page in Geektastic Realms. That page
+is a read-only mirror of what's in Foundry — to fix a wrong entry, fix it in Foundry and
+re-sync, rather than editing it in Geektastic Realms.
+
 ## Development notes
 
 - Plain vanilla JavaScript, native ES modules — no bundler/build step. Edit
@@ -70,7 +87,10 @@ revoked token, etc.).
 - See the comment above `TestConnectionForm` in `scripts/main.js` for one detail that
   couldn't be verified without a live v13 instance (whether `FormApplication` is still a
   bare global or needs `foundry.appv1.api.FormApplication`) — fix noted inline if you hit
-  it.
+  it. `CompendiumSyncForm` shares the same base class and the same caveat.
+- The `syncPacks` world setting (your saved pack selection) is intentionally not in the
+  visible Module Settings list (`config: false`) — it's managed entirely through the
+  Sync Compendiums dialog's checkboxes.
 
 ## License
 
