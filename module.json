@@ -1,0 +1,26 @@
+{
+  "id": "geektastic-realms-foundry-connect",
+  "title": "Geektastic Realms Foundry Connect",
+  "description": "Connects a Foundry VTT world to a Geektastic Realms instance — read/match compendium content and create clean NPCs pulled straight from your Geektastic Realms worldbuilding data.",
+  "version": "0.1.0",
+  "compatibility": {
+    "minimum": "13",
+    "verified": "13"
+  },
+  "authors": [
+    {
+      "name": "Geektasticdad",
+      "url": "https://github.com/Geektasticdad"
+    }
+  ],
+  "esmodules": [
+    "scripts/main.js"
+  ],
+  "url": "https://github.com/Geektasticdad/geektastic-realms-foundryvtt",
+  "manifest": "https://raw.githubusercontent.com/Geektasticdad/geektastic-realms-foundryvtt/main/module.json",
+  "download": "https://github.com/Geektasticdad/geektastic-realms-foundryvtt/releases/latest/download/module.zip",
+  "readme": "https://github.com/Geektasticdad/geektastic-realms-foundryvtt/blob/main/README.md",
+  "bugs": "https://github.com/Geektasticdad/geektastic-realms-foundryvtt/issues",
+  "changelog": "https://github.com/Geektasticdad/geektastic-realms-foundryvtt/blob/main/CHANGELOG.md",
+  "license": "LICENSE"
+}
