@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.4.0] - 2026-07-01
+
+### Added
+- **Search box in the Create NPC dialog** — filters the list by name as you type
+  (client-side, case-insensitive substring match against the already-fetched list).
+  Useful now that a world's full stat block list can run to 100+ entries.
+
+---
+
 ## [0.3.2] - 2026-07-01
 
 ### Fixed
@@ -81,7 +90,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   response).
 - Verified against Foundry VTT v13. Not yet tested against v14.
 
-[Unreleased]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v0.3.2...HEAD
+[Unreleased]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v0.3.2...v0.4.0
 [0.3.2]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v0.2.0...v0.3.0

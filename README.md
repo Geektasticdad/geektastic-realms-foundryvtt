@@ -81,12 +81,13 @@ re-sync, rather than editing it in Geektastic Realms.
 ## Creating an NPC
 
 In Module Settings, click **Create NPC**. A dialog lists every stat block from your
-connected Geektastic Realms world. Click **Create** next to the one you want — it
-appears as a new Actor in your world's Actors tab. Any feature or item you've confirmed
-a match for on the Geektastic Realms stat block editor (its **Foundry Compendium**
-column) is cloned from your compendium rather than recreated from scratch; anything
-unmatched is built fresh from the stat block's own data. Progress is shown live per
-step (actor, then features, then equipment).
+connected Geektastic Realms world — type in the search box to filter the list by name.
+Click **Create** next to the one you want — it appears as a new Actor in your world's
+Actors tab. Any feature or item you've confirmed a match for on the Geektastic Realms
+stat block editor (its **Foundry Compendium** column) is cloned from your compendium
+rather than recreated from scratch; anything unmatched is built fresh from the stat
+block's own data. Progress is shown live per step (actor, then features, then
+equipment).
 
 ## Development notes
 

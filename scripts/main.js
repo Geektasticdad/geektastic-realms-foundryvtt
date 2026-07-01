@@ -469,8 +469,10 @@ class CreateNpcForm extends FormApplication {
   async _renderInner() {
     const html = `
       <form class="grfc-create-npc" style="padding:.5rem;">
+        <input type="text" class="grfc-npc-search" placeholder="Search NPCs by name…"
+          style="width:100%;box-sizing:border-box;margin-bottom:.5rem;" disabled>
         <p id="grfc-npc-status" style="color:var(--color-text-dark-secondary,#666);margin:.25rem 0 .5rem;">Loading NPCs…</p>
-        <ul class="grfc-npc-list" style="list-style:none;margin:0;padding:0;height:480px;overflow-y:auto"></ul>
+        <ul class="grfc-npc-list" style="list-style:none;margin:0;padding:0;height:450px;overflow-y:auto"></ul>
       </form>
     `;
     return $(html);
@@ -479,11 +481,32 @@ class CreateNpcForm extends FormApplication {
   activateListeners(html) {
     super.activateListeners(html);
     this._loadList(html);
+
+    html.find('.grfc-npc-search').on('input', (event) => this._filterList(html, event.target.value));
+  }
+
+  _filterList(html, query) {
+    const needle = query.trim().toLowerCase();
+    const rows = html.find('.grfc-npc-list > li');
+    let visible = 0;
+
+    rows.each((_, el) => {
+      const row = $(el);
+      const matches = needle === '' || row.data('name').includes(needle);
+      row.toggle(matches);
+      if (matches) visible++;
+    });
+
+    const total = rows.length;
+    html.find('#grfc-npc-status').text(
+      needle === '' ? `${total} available — click Create to build one here.` : `${visible} of ${total} match "${query.trim()}".`
+    );
   }
 
   async _loadList(html) {
     const status = html.find('#grfc-npc-status');
     const list = html.find('.grfc-npc-list');
+    const search = html.find('.grfc-npc-search');
 
     const result = await fetchNpcList();
     if (!result.ok) {
@@ -498,10 +521,11 @@ class CreateNpcForm extends FormApplication {
     }
 
     status.text(`${npcs.length} available — click Create to build one here.`);
+    search.prop('disabled', false);
     list.empty();
     npcs.forEach((npc) => {
       const li = $(`
-        <li style="display:flex;align-items:center;gap:.5rem;padding:.35rem 0;border-bottom:1px solid #7773;">
+        <li data-name="${escapeHtml((npc.name || '').toLowerCase())}" style="display:flex;align-items:center;gap:.5rem;padding:.35rem 0;border-bottom:1px solid #7773;">
           <span style="flex:1 1 auto;min-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
             <strong>${escapeHtml(npc.name)}</strong>
             <span style="color:var(--color-text-dark-secondary,#666);font-size:.85em;"> — ${escapeHtml(npc.category || '')}${npc.challenge_rating ? ' · CR ' + escapeHtml(npc.challenge_rating) : ''}</span>
