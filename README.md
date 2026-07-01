@@ -16,13 +16,14 @@ in the main repo for what's shipped and what's next, and
 [FOUNDRY_API.md](https://github.com/Geektasticdad/geektastic-realms/blob/main/Docs/FOUNDRY_API.md)
 for the API contract this module talks to.
 
-## Current stage: Stage 3 — compendium indexing
+## Current stage: Stage 5 — NPC creation
 
-This version registers your Geektastic Realms server URL and API token (Stage 2), and
-syncs your world's Item-type compendiums (weapons, equipment, feats, spells, classes,
-backgrounds, species, ...) to Geektastic Realms so it can match stat block features/
-items against what already exists (Stage 3). It does not yet create NPCs in Foundry —
-that's Stage 5 onward.
+This version registers your Geektastic Realms server URL and API token (Stage 2), syncs
+your world's Item-type compendiums so Geektastic Realms can match stat block features/
+items against what already exists (Stage 3), and can now create a real Actor in your
+world directly from a Geektastic Realms stat block (Stage 5) — reusing any compendium
+matches you've confirmed on the Geektastic Realms side instead of duplicating that
+content.
 
 ## Requirements
 
@@ -76,6 +77,16 @@ View, search, and remove synced entries from the **Foundry VTT Connection** pane
 "Synced Compendium" link on your world's dashboard page in Geektastic Realms. That page
 is a read-only mirror of what's in Foundry — to fix a wrong entry, fix it in Foundry and
 re-sync, rather than editing it in Geektastic Realms.
+
+## Creating an NPC
+
+In Module Settings, click **Create NPC**. A dialog lists every stat block from your
+connected Geektastic Realms world. Click **Create** next to the one you want — it
+appears as a new Actor in your world's Actors tab. Any feature or item you've confirmed
+a match for on the Geektastic Realms stat block editor (its **Foundry Compendium**
+column) is cloned from your compendium rather than recreated from scratch; anything
+unmatched is built fresh from the stat block's own data. Progress is shown live per
+step (actor, then features, then equipment).
 
 ## Development notes
 

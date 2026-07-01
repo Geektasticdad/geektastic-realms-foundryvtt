@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.3.0] - 2026-07-01
+
+### Added
+- **Stage 5 — NPC creation.** New **Create NPC** settings menu opens a dialog listing
+  every stat block available in the connected Geektastic Realms world. Picking one
+  fetches the prepare payload (`GET /api/foundry/v1/npc/{entryId}/prepare`) and builds a
+  real Actor: `Actor.create()` for the base NPC (abilities, AC, HP, movement, senses,
+  traits), then each feature/item is added via a new `addItemToActor()` — if the item
+  carries a `compendium_ref`, it's resolved locally with `fromUuid()` and cloned onto the
+  actor (no duplication); otherwise a fresh Item is built from the inline data via
+  `featureItemData()`/`equipmentItemData()`. Per-row progress text shows each step
+  (actor, then features, then equipment) as it happens.
+- New helpers: `fetchNpcList()`, `prepareNpc()`, `SIZE_MAP`, `crToDecimal()`,
+  `parseMovement()`, `parseSenses()`.
+
+---
+
 ## [0.2.0] - 2026-07-01
 
 ### Added
@@ -35,6 +52,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   response).
 - Verified against Foundry VTT v13. Not yet tested against v14.
 
-[Unreleased]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/releases/tag/v0.1.0

@@ -1,13 +1,18 @@
 /**
- * Geektastic Realms Foundry Connect — Stages 2–3 (handshake + compendium indexing).
+ * Geektastic Realms Foundry Connect — Stages 2–5 (handshake, compendium indexing,
+ * and NPC creation; Stage 4's matching engine is entirely GR-side, no module changes).
  *
  * Registers the server URL / API token this world uses to reach a Geektastic Realms
- * instance, a "Test Connection" action (GET /api/foundry/v1/ping), and a "Sync
+ * instance, a "Test Connection" action (GET /api/foundry/v1/ping), a "Sync
  * Compendiums" action that walks this world's Item-type compendium packs and POSTs an
- * index of their contents to GR (POST /api/foundry/v1/compendium/sync), so GR can match
- * stat block features/items against what already exists instead of guessing. See
- * Docs/FOUNDRY_API.md and Docs/ROADMAP.md in the geektastic-realms repo for the full
- * API contract and staged plan.
+ * index of their contents to GR (POST /api/foundry/v1/compendium/sync) for matching,
+ * and a "Create NPC" action that pulls a prepared stat block (GET
+ * /api/foundry/v1/npc/{entryId}/prepare) and builds a real Actor in this world —
+ * cloning confirmed-matched features/items from local compendiums via `fromUuid()`
+ * and creating fresh Items (via Foundry's own `Item.create()`, which fills in schema
+ * defaults natively) for anything unmatched. See Docs/FOUNDRY_API.md and
+ * Docs/ROADMAP.md in the geektastic-realms repo for the full API contract and staged
+ * plan.
  *
  * Deliberately built against the classic FormApplication/Application v1 API rather
  * than v13's newer ApplicationV2 — v1 remains supported via Foundry's compatibility
@@ -130,6 +135,154 @@ async function syncCompendiums(packIds, onProgress) {
   }
 
   return { ok: true, totalSynced };
+}
+
+/** Fetches the list of stat-block-bearing entries available to create as NPCs (Stage 5). */
+async function fetchNpcList() {
+  return apiFetch('/api/foundry/v1/npc/list');
+}
+
+/** Fetches the creation payload for one entry's stat block. */
+async function prepareNpc(entryId) {
+  return apiFetch(`/api/foundry/v1/npc/${entryId}/prepare`);
+}
+
+/** GR size word -> Foundry dnd5e size code. */
+const SIZE_MAP = { Tiny: 'tiny', Small: 'sm', Medium: 'med', Large: 'lg', Huge: 'huge', Gargantuan: 'grg' };
+
+/** "1/2", "1/4", "1/8", or a plain number -> decimal CR. */
+function crToDecimal(cr) {
+  cr = String(cr ?? '').trim();
+  if (cr === '') return 0;
+  if (cr.includes('/')) {
+    const [n, d] = cr.split('/').map(Number);
+    return d ? n / d : 0;
+  }
+  return Number(cr) || 0;
+}
+
+/** Parses a free-text speed string ("30 ft., fly 60 ft., swim 30 ft.") into Foundry's movement shape. */
+function parseMovement(speed) {
+  const out = { units: 'ft', walk: 0, burrow: 0, climb: 0, fly: 0, swim: 0 };
+  const re = /(burrow|climb|fly|swim)?\s*(\d+)\s*ft/gi;
+  let m;
+  while ((m = re.exec(speed || '')) !== null) {
+    out[(m[1] || 'walk').toLowerCase()] = Number(m[2]);
+  }
+  return out;
+}
+
+/** Parses a free-text senses string ("darkvision 60 ft., passive Perception 15") into Foundry's senses shape. */
+function parseSenses(senses) {
+  const ranges = { darkvision: null, blindsight: null, tremorsense: null, truesight: null };
+  for (const key of Object.keys(ranges)) {
+    const m = new RegExp(`${key}\\s*(\\d+)\\s*ft`, 'i').exec(senses || '');
+    if (m) ranges[key] = Number(m[1]);
+  }
+  return { ...ranges, units: 'ft' };
+}
+
+/**
+ * Creates or reuses one Item on the actor: clones from a synced compendium entry via
+ * fromUuid() when a Stage 4 match was confirmed (compendium_ref present), otherwise
+ * creates a fresh Item from GR's data via Foundry's own Item.create() — which fills in
+ * every schema default itself, so there's no need to hand-construct a fully-shaped
+ * Foundry document the way the static export (FoundryExport::toActorArray in GR) has to.
+ */
+async function addItemToActor(actor, compendiumRef, freshItemData) {
+  if (compendiumRef && compendiumRef.entry_uuid) {
+    const source = await fromUuid(compendiumRef.entry_uuid);
+    if (source) {
+      const itemData = source.toObject();
+      delete itemData._id;
+      await actor.createEmbeddedDocuments('Item', [itemData]);
+      return;
+    }
+    // Fall through to fresh creation if the compendium entry no longer resolves
+    // (e.g. deleted from the pack since the last sync).
+  }
+  await actor.createEmbeddedDocuments('Item', [freshItemData]);
+}
+
+function featureItemData(feature) {
+  return {
+    name: feature.name,
+    type: 'feat',
+    system: {
+      description: { value: feature.description || '' },
+      type: { value: 'monster' },
+    },
+  };
+}
+
+function equipmentItemData(item) {
+  const description = [item.properties, item.notes].filter(Boolean).join('\n\n');
+  return {
+    name: item.name,
+    type: item.foundry_type || 'loot',
+    system: {
+      description: { value: description },
+      quantity: item.quantity || 1,
+      weight: { value: item.weight || 0 },
+      price: { value: item.value_amount || 0, denomination: item.value_unit || 'gp' },
+      attunement: item.requires_attunement ? 'required' : '',
+    },
+  };
+}
+
+/**
+ * Builds a real Actor in this world from a GR "prepare" payload (Stage 5), resolving
+ * confirmed compendium matches and creating fresh Items for everything else.
+ * @returns {Promise<Actor>}
+ */
+async function createNpcInFoundry(npc, onProgress) {
+  onProgress?.('Creating actor…');
+
+  const abilities = {};
+  for (const [key, value] of Object.entries(npc.abilities || {})) {
+    abilities[key] = { value };
+  }
+
+  const actor = await Actor.create({
+    name: npc.name,
+    type: 'npc',
+    system: {
+      abilities,
+      attributes: {
+        ac: { calc: 'flat', flat: npc.armor_class },
+        hp: { value: npc.hit_points, max: npc.hit_points, formula: npc.hit_dice },
+        movement: parseMovement(npc.speed),
+        senses: parseSenses(npc.senses),
+      },
+      details: {
+        alignment: npc.alignment,
+        cr: crToDecimal(npc.challenge_rating),
+        type: { value: (npc.type || '').toLowerCase(), subtype: npc.subtype || '' },
+      },
+      traits: {
+        size: SIZE_MAP[npc.size] || 'med',
+        languages: { value: [], custom: npc.languages || '' },
+        dr: { value: [], custom: npc.damage_resistances || '' },
+        di: { value: [], custom: npc.damage_immunities || '' },
+        dv: { value: [], custom: npc.damage_vulnerabilities || '' },
+        ci: { value: [], custom: npc.condition_immunities || '' },
+      },
+    },
+  });
+
+  const features = npc.features || [];
+  for (let i = 0; i < features.length; i++) {
+    onProgress?.(`Adding features/actions… (${i + 1}/${features.length})`);
+    await addItemToActor(actor, features[i].compendium_ref, featureItemData(features[i]));
+  }
+
+  const items = npc.items || [];
+  for (let i = 0; i < items.length; i++) {
+    onProgress?.(`Adding equipment… (${i + 1}/${items.length})`);
+    await addItemToActor(actor, items[i].compendium_ref, equipmentItemData(items[i]));
+  }
+
+  return actor;
 }
 
 /**
@@ -291,6 +444,100 @@ class CompendiumSyncForm extends FormApplication {
   }
 }
 
+/**
+ * Lists NPCs (stat-block-bearing entries) available in the connected GR world and
+ * creates one as a real Actor here on request (Stage 5) — a "pull" model, so GR never
+ * needs this Foundry instance to be reachable over the network; the module only ever
+ * calls out to GR.
+ */
+class CreateNpcForm extends FormApplication {
+  static get defaultOptions() {
+    return foundry.utils.mergeObject(super.defaultOptions, {
+      id: 'grfc-create-npc',
+      title: 'Geektastic Realms — Create NPC',
+      width: 480,
+      height: 'auto',
+      closeOnSubmit: false,
+      resizable: true,
+    });
+  }
+
+  getData() {
+    return {};
+  }
+
+  async _renderInner() {
+    const html = `
+      <form class="grfc-create-npc" style="padding:.5rem;">
+        <p id="grfc-npc-status" style="color:var(--color-text-dark-secondary,#666);margin:.25rem 0 .5rem;">Loading NPCs…</p>
+        <ul class="grfc-npc-list" style="list-style:none;margin:0;padding:0;max-height:360px;overflow-y:auto"></ul>
+      </form>
+    `;
+    return $(html);
+  }
+
+  activateListeners(html) {
+    super.activateListeners(html);
+    this._loadList(html);
+  }
+
+  async _loadList(html) {
+    const status = html.find('#grfc-npc-status');
+    const list = html.find('.grfc-npc-list');
+
+    const result = await fetchNpcList();
+    if (!result.ok) {
+      status.text(`✘ ${result.error}`).css('color', '#c62828');
+      return;
+    }
+
+    const npcs = result.body.npcs || [];
+    if (npcs.length === 0) {
+      status.text('No stat blocks found in this Geektastic Realms world.');
+      return;
+    }
+
+    status.text(`${npcs.length} available — click Create to build one here.`);
+    list.empty();
+    npcs.forEach((npc) => {
+      const li = $(`
+        <li style="display:flex;align-items:center;gap:.5rem;padding:.35rem 0;border-bottom:1px solid #7773;">
+          <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+            <strong>${npc.name}</strong>
+            <span style="color:var(--color-text-dark-secondary,#666);font-size:.85em;"> — ${npc.category || ''}${npc.challenge_rating ? ' · CR ' + npc.challenge_rating : ''}</span>
+          </span>
+          <span class="grfc-npc-row-status" style="min-width:1.5em;"></span>
+          <button type="button" class="grfc-create-btn">Create</button>
+        </li>
+      `);
+      li.find('.grfc-create-btn').on('click', async () => {
+        const rowStatus = li.find('.grfc-npc-row-status');
+        const btn = li.find('.grfc-create-btn');
+        btn.prop('disabled', true);
+        rowStatus.text('Preparing…');
+
+        const prepared = await prepareNpc(npc.entry_id);
+        if (!prepared.ok) {
+          rowStatus.text('✘').attr('title', prepared.error).css('color', '#c62828');
+          btn.prop('disabled', false);
+          return;
+        }
+
+        try {
+          await createNpcInFoundry(prepared.body.npc, (msg) => rowStatus.text(msg));
+          rowStatus.text('✔ Created').css('color', '#2e7d32');
+          ui.notifications.info(`Geektastic Realms Foundry Connect: created "${npc.name}".`);
+        } catch (err) {
+          rowStatus.text('✘').attr('title', err.message).css('color', '#c62828');
+          ui.notifications.error(`Geektastic Realms Foundry Connect: failed to create "${npc.name}" — ${err.message}`);
+          btn.prop('disabled', false);
+        }
+      });
+      list.append(li);
+    });
+  }
+}
+
 Hooks.once('init', () => {
   game.settings.register(MODULE_ID, 'serverUrl', {
     name: 'Geektastic Realms Server URL',
@@ -336,6 +583,15 @@ Hooks.once('init', () => {
     hint: 'Choose which compendiums to sync to Geektastic Realms for stat block matching.',
     icon: 'fas fa-sync',
     type: CompendiumSyncForm,
+    restricted: true,
+  });
+
+  game.settings.registerMenu(MODULE_ID, 'createNpcMenu', {
+    name: 'Create NPC',
+    label: 'Create NPC',
+    hint: 'Pull a stat block from Geektastic Realms and create it as an Actor in this world.',
+    icon: 'fas fa-user-plus',
+    type: CreateNpcForm,
     restricted: true,
   });
 });
