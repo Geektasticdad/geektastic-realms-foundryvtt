@@ -9,6 +9,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.3.2] - 2026-07-01
+
+### Fixed
+- **Create button stretched to fill the whole row**: Foundry's core stylesheet applies
+  `width: 100%` to bare `<button>` elements (intended for the other dialogs' single
+  full-width footer buttons). `flex: 0 0 auto` alone doesn't override that, since an
+  `auto` flex-basis falls back to the element's `width`. Each row's Create button now
+  sets an explicit `width: auto`.
+
+---
+
+## [0.3.1] - 2026-07-01
+
+### Fixed
+- **Create NPC dialog showed no names, only Create buttons**: each row's name/category
+  text sat in a flex item with `min-width:0` next to a status indicator and a Create
+  button that don't shrink — in the dialog's original 480px width, the name column
+  could get squeezed to zero width while the button stayed visible. Widened the dialog
+  (640×600, was 480×auto) and gave the name column a real `min-width` so it can't
+  collapse to nothing.
+- **Dialog opened very small**: `height: 'auto'` measured the tiny "Loading NPCs…"
+  placeholder before the real list arrived. The dialog now opens at a fixed 640×600.
+- NPC name/category/CR text is now passed through the module's existing `escapeHtml()`
+  helper before being interpolated into the row markup (already used elsewhere in the
+  module, missed here) — guards against a name containing `<`/`&` breaking the row's
+  HTML structure.
+
+---
+
 ## [0.3.0] - 2026-07-01
 
 ### Added
@@ -52,7 +81,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   response).
 - Verified against Foundry VTT v13. Not yet tested against v14.
 
-[Unreleased]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v0.3.2...HEAD
+[0.3.2]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v0.3.1...v0.3.2
+[0.3.1]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/releases/tag/v0.1.0

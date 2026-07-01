@@ -455,8 +455,8 @@ class CreateNpcForm extends FormApplication {
     return foundry.utils.mergeObject(super.defaultOptions, {
       id: 'grfc-create-npc',
       title: 'Geektastic Realms — Create NPC',
-      width: 480,
-      height: 'auto',
+      width: 640,
+      height: 600,
       closeOnSubmit: false,
       resizable: true,
     });
@@ -470,7 +470,7 @@ class CreateNpcForm extends FormApplication {
     const html = `
       <form class="grfc-create-npc" style="padding:.5rem;">
         <p id="grfc-npc-status" style="color:var(--color-text-dark-secondary,#666);margin:.25rem 0 .5rem;">Loading NPCs…</p>
-        <ul class="grfc-npc-list" style="list-style:none;margin:0;padding:0;max-height:360px;overflow-y:auto"></ul>
+        <ul class="grfc-npc-list" style="list-style:none;margin:0;padding:0;height:480px;overflow-y:auto"></ul>
       </form>
     `;
     return $(html);
@@ -502,12 +502,12 @@ class CreateNpcForm extends FormApplication {
     npcs.forEach((npc) => {
       const li = $(`
         <li style="display:flex;align-items:center;gap:.5rem;padding:.35rem 0;border-bottom:1px solid #7773;">
-          <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
-            <strong>${npc.name}</strong>
-            <span style="color:var(--color-text-dark-secondary,#666);font-size:.85em;"> — ${npc.category || ''}${npc.challenge_rating ? ' · CR ' + npc.challenge_rating : ''}</span>
+          <span style="flex:1 1 auto;min-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+            <strong>${escapeHtml(npc.name)}</strong>
+            <span style="color:var(--color-text-dark-secondary,#666);font-size:.85em;"> — ${escapeHtml(npc.category || '')}${npc.challenge_rating ? ' · CR ' + escapeHtml(npc.challenge_rating) : ''}</span>
           </span>
-          <span class="grfc-npc-row-status" style="min-width:1.5em;"></span>
-          <button type="button" class="grfc-create-btn">Create</button>
+          <span class="grfc-npc-row-status" style="flex:0 0 auto;min-width:1.5em;"></span>
+          <button type="button" class="grfc-create-btn" style="flex:0 0 auto;width:auto;white-space:nowrap;padding:0 .75rem;">Create</button>
         </li>
       `);
       li.find('.grfc-create-btn').on('click', async () => {
