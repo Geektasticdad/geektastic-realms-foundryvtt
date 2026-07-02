@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.5.0] - 2026-07-01
+
+### Added
+- **Stage 6 — icon pipeline.** When creating an NPC, any feature or equipment item
+  that has no Stage 4 compendium match but does have an icon attached on the
+  Geektastic Realms side now gets that icon in Foundry too, instead of the engine's
+  blank default. New `fetchIconBlob()` (authenticated GET against
+  `/api/foundry/v1/media/{id}`) and `uploadIconToFoundry()` (uploads the downloaded
+  icon into this world's own Data directory at `worlds/{world-id}/grfc-icons/` via
+  `FilePicker.upload()`, cached per NPC creation so a shared icon isn't re-uploaded
+  once per item). Any failure along the way (network, upload permissions, etc.) is
+  swallowed — the item is still created, just without a custom icon.
+
+---
+
 ## [0.4.0] - 2026-07-01
 
 ### Added
@@ -90,7 +105,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   response).
 - Verified against Foundry VTT v13. Not yet tested against v14.
 
-[Unreleased]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v0.3.2...v0.4.0
 [0.3.2]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v0.3.0...v0.3.1

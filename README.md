@@ -16,14 +16,15 @@ in the main repo for what's shipped and what's next, and
 [FOUNDRY_API.md](https://github.com/Geektasticdad/geektastic-realms/blob/main/Docs/FOUNDRY_API.md)
 for the API contract this module talks to.
 
-## Current stage: Stage 5 — NPC creation
+## Current stage: Stage 6 — icon pipeline
 
 This version registers your Geektastic Realms server URL and API token (Stage 2), syncs
 your world's Item-type compendiums so Geektastic Realms can match stat block features/
-items against what already exists (Stage 3), and can now create a real Actor in your
-world directly from a Geektastic Realms stat block (Stage 5) — reusing any compendium
-matches you've confirmed on the Geektastic Realms side instead of duplicating that
-content.
+items against what already exists (Stage 3), creates a real Actor in your world
+directly from a Geektastic Realms stat block (Stage 5) — reusing any compendium matches
+you've confirmed on the Geektastic Realms side instead of duplicating that content —
+and now gives unmatched features/items a real icon (Stage 6) if one's attached on the
+Geektastic Realms side, instead of Foundry's blank default.
 
 ## Requirements
 
@@ -85,9 +86,10 @@ connected Geektastic Realms world — type in the search box to filter the list 
 Click **Create** next to the one you want — it appears as a new Actor in your world's
 Actors tab. Any feature or item you've confirmed a match for on the Geektastic Realms
 stat block editor (its **Foundry Compendium** column) is cloned from your compendium
-rather than recreated from scratch; anything unmatched is built fresh from the stat
-block's own data. Progress is shown live per step (actor, then features, then
-equipment).
+rather than recreated from scratch — icon included; anything unmatched is built fresh
+from the stat block's own data, and now picks up a real icon too if the DM attached one
+in the feature/item's **Icon** field on Geektastic Realms. Progress is shown live per
+step (actor, then features/icons, then equipment/icons).
 
 ## Development notes
 

@@ -1,6 +1,7 @@
 /**
- * Geektastic Realms Foundry Connect — Stages 2–5 (handshake, compendium indexing,
- * and NPC creation; Stage 4's matching engine is entirely GR-side, no module changes).
+ * Geektastic Realms Foundry Connect — Stages 2–6 (handshake, compendium indexing,
+ * NPC creation, and icon pipeline; Stage 4's matching engine is entirely GR-side,
+ * no module changes).
  *
  * Registers the server URL / API token this world uses to reach a Geektastic Realms
  * instance, a "Test Connection" action (GET /api/foundry/v1/ping), a "Sync
@@ -10,9 +11,11 @@
  * /api/foundry/v1/npc/{entryId}/prepare) and builds a real Actor in this world —
  * cloning confirmed-matched features/items from local compendiums via `fromUuid()`
  * and creating fresh Items (via Foundry's own `Item.create()`, which fills in schema
- * defaults natively) for anything unmatched. See Docs/FOUNDRY_API.md and
- * Docs/ROADMAP.md in the geektastic-realms repo for the full API contract and staged
- * plan.
+ * defaults natively) for anything unmatched. Unmatched items/features that have an
+ * icon attached on the GR side get it pulled via GET /api/foundry/v1/media/{id} and
+ * uploaded into this world's own Data directory (Stage 6), instead of Foundry's blank
+ * default icon. See Docs/FOUNDRY_API.md and Docs/ROADMAP.md in the geektastic-realms
+ * repo for the full API contract and staged plan.
  *
  * Deliberately built against the classic FormApplication/Application v1 API rather
  * than v13's newer ApplicationV2 — v1 remains supported via Foundry's compatibility
@@ -147,6 +150,64 @@ async function prepareNpc(entryId) {
   return apiFetch(`/api/foundry/v1/npc/${entryId}/prepare`);
 }
 
+/** MIME type -> file extension, for icons downloaded from GR's media library. */
+const ICON_MIME_EXT = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif' };
+
+/**
+ * Fetches a GR media library icon as a Blob via the authenticated
+ * /api/foundry/v1/media/{id} endpoint (Stage 6). Returns null on any failure —
+ * a missing icon should never block NPC creation.
+ */
+async function fetchIconBlob(mediaId) {
+  const { serverUrl, token } = getServerConfig();
+  if (!serverUrl || !token) return null;
+  try {
+    const response = await fetch(`${serverUrl}/api/foundry/v1/media/${mediaId}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!response.ok) return null;
+    return await response.blob();
+  } catch (err) {
+    console.warn(`Geektastic Realms Foundry Connect: failed to fetch icon ${mediaId}.`, err);
+    return null;
+  }
+}
+
+/**
+ * Downloads a GR media library icon and uploads it into this world's own Data
+ * directory so a freshly-created Item can reference it as its `img` (Stage 6).
+ * Only used for unmatched items/features — a compendium-matched clone already
+ * carries the source document's own icon. Results are cached by media id so
+ * the same icon isn't re-uploaded once per item that shares it. Returns the
+ * Foundry-local path, or null on any failure (non-fatal — the item is still
+ * created, just with Foundry's default icon).
+ */
+async function uploadIconToFoundry(mediaId, cache) {
+  if (!mediaId) return null;
+  if (cache.has(mediaId)) return cache.get(mediaId);
+
+  const blob = await fetchIconBlob(mediaId);
+  if (!blob) {
+    cache.set(mediaId, null);
+    return null;
+  }
+
+  try {
+    const dir = `worlds/${game.world.id}/grfc-icons`;
+    await FilePicker.createDirectory('data', dir).catch(() => {});
+    const ext = ICON_MIME_EXT[blob.type] || 'png';
+    const file = new File([blob], `icon-${mediaId}.${ext}`, { type: blob.type });
+    const result = await FilePicker.upload('data', dir, file, {}, { notify: false });
+    const path = result?.path || null;
+    cache.set(mediaId, path);
+    return path;
+  } catch (err) {
+    console.warn(`Geektastic Realms Foundry Connect: failed to upload icon ${mediaId}.`, err);
+    cache.set(mediaId, null);
+    return null;
+  }
+}
+
 /** GR size word -> Foundry dnd5e size code. */
 const SIZE_MAP = { Tiny: 'tiny', Small: 'sm', Medium: 'med', Large: 'lg', Huge: 'huge', Gargantuan: 'grg' };
 
@@ -204,8 +265,8 @@ async function addItemToActor(actor, compendiumRef, freshItemData) {
   await actor.createEmbeddedDocuments('Item', [freshItemData]);
 }
 
-function featureItemData(feature) {
-  return {
+function featureItemData(feature, imgPath) {
+  const data = {
     name: feature.name,
     type: 'feat',
     system: {
@@ -213,11 +274,13 @@ function featureItemData(feature) {
       type: { value: 'monster' },
     },
   };
+  if (imgPath) data.img = imgPath;
+  return data;
 }
 
-function equipmentItemData(item) {
+function equipmentItemData(item, imgPath) {
   const description = [item.properties, item.notes].filter(Boolean).join('\n\n');
-  return {
+  const data = {
     name: item.name,
     type: item.foundry_type || 'loot',
     system: {
@@ -228,6 +291,8 @@ function equipmentItemData(item) {
       attunement: item.requires_attunement ? 'required' : '',
     },
   };
+  if (imgPath) data.img = imgPath;
+  return data;
 }
 
 /**
@@ -270,16 +335,28 @@ async function createNpcInFoundry(npc, onProgress) {
     },
   });
 
+  const iconCache = new Map();
+
   const features = npc.features || [];
   for (let i = 0; i < features.length; i++) {
     onProgress?.(`Adding features/actions… (${i + 1}/${features.length})`);
-    await addItemToActor(actor, features[i].compendium_ref, featureItemData(features[i]));
+    let imgPath = null;
+    if (!features[i].compendium_ref && features[i].icon_media_id) {
+      onProgress?.(`Uploading icon… (${i + 1}/${features.length})`);
+      imgPath = await uploadIconToFoundry(features[i].icon_media_id, iconCache);
+    }
+    await addItemToActor(actor, features[i].compendium_ref, featureItemData(features[i], imgPath));
   }
 
   const items = npc.items || [];
   for (let i = 0; i < items.length; i++) {
     onProgress?.(`Adding equipment… (${i + 1}/${items.length})`);
-    await addItemToActor(actor, items[i].compendium_ref, equipmentItemData(items[i]));
+    let imgPath = null;
+    if (!items[i].compendium_ref && items[i].icon_media_id) {
+      onProgress?.(`Uploading icon… (${i + 1}/${items.length})`);
+      imgPath = await uploadIconToFoundry(items[i].icon_media_id, iconCache);
+    }
+    await addItemToActor(actor, items[i].compendium_ref, equipmentItemData(items[i], imgPath));
   }
 
   return actor;
