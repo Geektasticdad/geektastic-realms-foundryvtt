@@ -2,7 +2,7 @@
 
 A Foundry VTT module that connects a world to a [Geektastic
 Realms](https://github.com/Geektasticdad/geektastic-realms) instance — read/match
-existing compendium content (skills, features, items, spells) and create clean NPCs
+existing compendium content (skills, features, items, spells) and create clean Actors
 pulled directly from your Geektastic Realms worldbuilding data, instead of hand-copying
 stat blocks.
 
@@ -80,17 +80,25 @@ View, search, and remove synced entries from the **Foundry VTT Connection** pane
 is a read-only mirror of what's in Foundry — to fix a wrong entry, fix it in Foundry and
 re-sync, rather than editing it in Geektastic Realms.
 
-## Creating an NPC
+## Creating an Actor
 
-In Module Settings, click **Create NPC**. A dialog lists every stat block from your
-connected Geektastic Realms world — type in the search box to filter the list by name.
-Click **Create** next to the one you want — it appears as a new Actor in your world's
-Actors tab. Any feature or item you've confirmed a match for on the Geektastic Realms
+In Module Settings, click **Create Actor**. A dialog lists every stat block from your
+connected Geektastic Realms world — from *any* GR category, not just one named "NPCs"
+(a custom category like "Monsters" or "Villains" works the same way). Type in the
+search box to filter by name, or use the category dropdown to narrow the list to one
+category. Pick a destination from the **Create in folder** dropdown (lists this
+world's Actors-directory folders; leave it on "(No folder)" to create at the root) —
+this applies to whichever entry you click Create on next. Click **Create** next to the
+one you want — it appears as a new Actor in your world's Actors tab, in the folder you
+picked. If the entry has a featured image set on the Geektastic Realms side, it's used
+as the created Actor's portrait (not the token image, which stays at Foundry's
+default). Any feature or item you've confirmed a match for on the Geektastic Realms
 stat block editor (its **Foundry Compendium** column) is cloned from your compendium
 rather than recreated from scratch — icon included; anything unmatched is built fresh
-from the stat block's own data, and now picks up a real icon too if the DM attached one
-in the feature/item's **Icon** field on Geektastic Realms. Progress is shown live per
-step (actor, then features/icons, then equipment/icons).
+from the stat block's own data, picks up a real icon if the DM attached one in the
+feature/item's **Icon** field on Geektastic Realms, and gets accurate Foundry item
+typing where GR's data supports it. Progress is shown live per step (actor, then
+features/icons, then equipment/icons).
 
 ## Development notes
 

@@ -9,6 +9,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.9.0] - 2026-07-01
+
+### Added
+- **Actor portrait from GR's featured image.** If the entry has a featured image on
+  the Geektastic Realms side, it's now uploaded and set as the created Actor's own
+  portrait `img` (the prototype token's texture is left at Foundry's default — only
+  the portrait is set). Reuses the existing icon fetch/upload pipeline from Stage 6;
+  the new `portrait_media_id` field on the prepare payload is distinct from a
+  feature/item's `icon_media_id`.
+
+---
+
+## [0.8.0] - 2026-07-01
+
+### Added
+- **Destination folder dropdown** in the Create Actor dialog — lists this world's
+  Actors-directory folders (populated locally from `game.folders`, no GR round-trip
+  needed) so a created Actor can land directly in the folder you pick instead of
+  always going to the root of the Actors directory. Applies to whichever entry you
+  click Create on next; `Actor.create()` now takes a `folder` id.
+
+---
+
+## [0.7.0] - 2026-07-01
+
+### Changed
+- **"Create NPC" renamed to "Create Actor"** (settings menu, dialog title) — the
+  picker already pulled from every GR category with a stat block attached, not just
+  ones named "NPCs" (`StatBlock::forSetting()` on the GR side has no category filter),
+  so the old name undersold it. No GR-side change was needed for this — GR already
+  returns each entry's `category` in `/api/foundry/v1/npc/list`.
+
+### Added
+- **Category filter** in the Create Actor dialog — a dropdown (populated from the
+  categories actually present in the fetched list) narrows the list alongside the
+  existing name search. Useful once a world has stat blocks spread across several GR
+  categories (e.g. a custom "Monsters" category alongside "NPCs").
+
+---
+
 ## [0.6.0] - 2026-07-01
 
 ### Added
@@ -119,7 +159,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   response).
 - Verified against Foundry VTT v13. Not yet tested against v14.
 
-[Unreleased]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v0.8.0...v0.9.0
+[0.8.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v0.7.0...v0.8.0
+[0.7.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v0.3.2...v0.4.0

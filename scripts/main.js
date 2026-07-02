@@ -1,16 +1,17 @@
 /**
- * Geektastic Realms Foundry Connect — Stages 2–6 (handshake, compendium indexing,
- * NPC creation, and icon pipeline; Stage 4's matching engine is entirely GR-side,
- * no module changes).
+ * Geektastic Realms Foundry Connect — Stages 2–7 (handshake, compendium indexing,
+ * NPC/Actor creation, icon pipeline, and precise item typing; Stage 4's matching
+ * engine is entirely GR-side, no module changes).
  *
  * Registers the server URL / API token this world uses to reach a Geektastic Realms
  * instance, a "Test Connection" action (GET /api/foundry/v1/ping), a "Sync
  * Compendiums" action that walks this world's Item-type compendium packs and POSTs an
  * index of their contents to GR (POST /api/foundry/v1/compendium/sync) for matching,
- * and a "Create NPC" action that pulls a prepared stat block (GET
- * /api/foundry/v1/npc/{entryId}/prepare) and builds a real Actor in this world —
- * cloning confirmed-matched features/items from local compendiums via `fromUuid()`
- * and creating fresh Items (via Foundry's own `Item.create()`, which fills in schema
+ * and a "Create Actor" action that pulls a prepared stat block (GET
+ * /api/foundry/v1/npc/{entryId}/prepare — from any GR category with a stat block, not
+ * just one literally named "NPCs") and builds a real Actor in this world — cloning
+ * confirmed-matched features/items from local compendiums via `fromUuid()` and
+ * creating fresh Items (via Foundry's own `Item.create()`, which fills in schema
  * defaults natively) for anything unmatched. Unmatched items/features that have an
  * icon attached on the GR side get it pulled via GET /api/foundry/v1/media/{id} and
  * uploaded into this world's own Data directory (Stage 6), instead of Foundry's blank
@@ -321,10 +322,22 @@ function equipmentItemData(item, imgPath) {
 
 /**
  * Builds a real Actor in this world from a GR "prepare" payload (Stage 5), resolving
- * confirmed compendium matches and creating fresh Items for everything else.
+ * confirmed compendium matches and creating fresh Items for everything else. If the
+ * entry has a featured image on the GR side (`portrait_media_id`), it's uploaded and
+ * set as the Actor's own portrait `img` (not the prototype token's texture, which is
+ * left at Foundry's default).
+ * @param {string} [folderId] Actors-directory folder to create the Actor in; omit/empty for root.
  * @returns {Promise<Actor>}
  */
-async function createNpcInFoundry(npc, onProgress) {
+async function createNpcInFoundry(npc, onProgress, folderId) {
+  const iconCache = new Map();
+
+  let portraitPath = null;
+  if (npc.portrait_media_id) {
+    onProgress?.('Uploading portrait…');
+    portraitPath = await uploadIconToFoundry(npc.portrait_media_id, iconCache);
+  }
+
   onProgress?.('Creating actor…');
 
   const abilities = {};
@@ -335,6 +348,8 @@ async function createNpcInFoundry(npc, onProgress) {
   const actor = await Actor.create({
     name: npc.name,
     type: 'npc',
+    folder: folderId || null,
+    ...(portraitPath ? { img: portraitPath } : {}),
     system: {
       abilities,
       attributes: {
@@ -358,8 +373,6 @@ async function createNpcInFoundry(npc, onProgress) {
       },
     },
   });
-
-  const iconCache = new Map();
 
   const features = npc.features || [];
   for (let i = 0; i < features.length; i++) {
@@ -546,16 +559,16 @@ class CompendiumSyncForm extends FormApplication {
 }
 
 /**
- * Lists NPCs (stat-block-bearing entries) available in the connected GR world and
- * creates one as a real Actor here on request (Stage 5) — a "pull" model, so GR never
- * needs this Foundry instance to be reachable over the network; the module only ever
- * calls out to GR.
+ * Lists stat-block-bearing entries available in the connected GR world — from *any*
+ * GR category, not just one literally named "NPCs" — and creates one as a real Actor
+ * here on request (Stage 5) — a "pull" model, so GR never needs this Foundry instance
+ * to be reachable over the network; the module only ever calls out to GR.
  */
 class CreateNpcForm extends FormApplication {
   static get defaultOptions() {
     return foundry.utils.mergeObject(super.defaultOptions, {
       id: 'grfc-create-npc',
-      title: 'Geektastic Realms — Create NPC',
+      title: 'Geektastic Realms — Create Actor',
       width: 640,
       height: 600,
       closeOnSubmit: false,
@@ -570,9 +583,20 @@ class CreateNpcForm extends FormApplication {
   async _renderInner() {
     const html = `
       <form class="grfc-create-npc" style="padding:.5rem;">
-        <input type="text" class="grfc-npc-search" placeholder="Search NPCs by name…"
-          style="width:100%;box-sizing:border-box;margin-bottom:.5rem;" disabled>
-        <p id="grfc-npc-status" style="color:var(--color-text-dark-secondary,#666);margin:.25rem 0 .5rem;">Loading NPCs…</p>
+        <div style="display:flex; gap:.5rem; margin-bottom:.5rem;">
+          <input type="text" class="grfc-npc-search" placeholder="Search by name…"
+            style="flex:1 1 auto;min-width:0;box-sizing:border-box;" disabled>
+          <select class="grfc-category-filter" style="flex:0 0 auto;" disabled>
+            <option value="">All categories</option>
+          </select>
+        </div>
+        <div style="display:flex; align-items:center; gap:.5rem; margin-bottom:.5rem;">
+          <label style="white-space:nowrap;color:var(--color-text-dark-secondary,#666);font-size:.85em;">Create in folder:</label>
+          <select class="grfc-folder-select" style="flex:1 1 auto;min-width:0;">
+            <option value="">(No folder)</option>
+          </select>
+        </div>
+        <p id="grfc-npc-status" style="color:var(--color-text-dark-secondary,#666);margin:.25rem 0 .5rem;">Loading actors…</p>
         <ul class="grfc-npc-list" style="list-style:none;margin:0;padding:0;height:450px;overflow-y:auto"></ul>
       </form>
     `;
@@ -582,25 +606,46 @@ class CreateNpcForm extends FormApplication {
   activateListeners(html) {
     super.activateListeners(html);
     this._loadList(html);
+    this._populateFolders(html);
 
-    html.find('.grfc-npc-search').on('input', (event) => this._filterList(html, event.target.value));
+    html.find('.grfc-npc-search').on('input', () => this._applyFilters(html));
+    html.find('.grfc-category-filter').on('change', () => this._applyFilters(html));
   }
 
-  _filterList(html, query) {
-    const needle = query.trim().toLowerCase();
+  /** Populates the target-folder dropdown from this world's Actor folders — purely local, no GR round-trip needed. */
+  _populateFolders(html) {
+    const select = html.find('.grfc-folder-select');
+    const folders = game.folders
+      .filter((f) => f.type === 'Actor')
+      .map((f) => ({ id: f.id, name: f.name, depth: f.depth || 1 }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    folders.forEach((f) => {
+      const prefix = f.depth > 1 ? '—'.repeat(f.depth - 1) + ' ' : '';
+      select.append(`<option value="${escapeHtml(f.id)}">${prefix}${escapeHtml(f.name)}</option>`);
+    });
+  }
+
+  _applyFilters(html) {
+    const query = html.find('.grfc-npc-search').val().trim().toLowerCase();
+    const category = html.find('.grfc-category-filter').val();
     const rows = html.find('.grfc-npc-list > li');
     let visible = 0;
 
     rows.each((_, el) => {
       const row = $(el);
-      const matches = needle === '' || row.data('name').includes(needle);
+      const matches = (query === '' || row.data('name').includes(query))
+        && (category === '' || row.data('category') === category);
       row.toggle(matches);
       if (matches) visible++;
     });
 
     const total = rows.length;
+    const filters = [];
+    if (query) filters.push(`name matches "${query}"`);
+    if (category) filters.push(`category is "${category}"`);
     html.find('#grfc-npc-status').text(
-      needle === '' ? `${total} available — click Create to build one here.` : `${visible} of ${total} match "${query.trim()}".`
+      filters.length === 0 ? `${total} available — click Create to build one here.` : `${visible} of ${total} match (${filters.join(', ')}).`
     );
   }
 
@@ -608,6 +653,7 @@ class CreateNpcForm extends FormApplication {
     const status = html.find('#grfc-npc-status');
     const list = html.find('.grfc-npc-list');
     const search = html.find('.grfc-npc-search');
+    const categoryFilter = html.find('.grfc-category-filter');
 
     const result = await fetchNpcList();
     if (!result.ok) {
@@ -623,10 +669,15 @@ class CreateNpcForm extends FormApplication {
 
     status.text(`${npcs.length} available — click Create to build one here.`);
     search.prop('disabled', false);
+
+    const categories = [...new Set(npcs.map((n) => n.category).filter(Boolean))].sort();
+    categories.forEach((c) => categoryFilter.append(`<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`));
+    categoryFilter.prop('disabled', false);
+
     list.empty();
     npcs.forEach((npc) => {
       const li = $(`
-        <li data-name="${escapeHtml((npc.name || '').toLowerCase())}" style="display:flex;align-items:center;gap:.5rem;padding:.35rem 0;border-bottom:1px solid #7773;">
+        <li data-name="${escapeHtml((npc.name || '').toLowerCase())}" data-category="${escapeHtml(npc.category || '')}" style="display:flex;align-items:center;gap:.5rem;padding:.35rem 0;border-bottom:1px solid #7773;">
           <span style="flex:1 1 auto;min-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
             <strong>${escapeHtml(npc.name)}</strong>
             <span style="color:var(--color-text-dark-secondary,#666);font-size:.85em;"> — ${escapeHtml(npc.category || '')}${npc.challenge_rating ? ' · CR ' + escapeHtml(npc.challenge_rating) : ''}</span>
@@ -649,7 +700,8 @@ class CreateNpcForm extends FormApplication {
         }
 
         try {
-          await createNpcInFoundry(prepared.body.npc, (msg) => rowStatus.text(msg));
+          const folderId = html.find('.grfc-folder-select').val();
+          await createNpcInFoundry(prepared.body.npc, (msg) => rowStatus.text(msg), folderId);
           rowStatus.text('✔ Created').css('color', '#2e7d32');
           ui.notifications.info(`Geektastic Realms Foundry Connect: created "${npc.name}".`);
         } catch (err) {
@@ -712,9 +764,9 @@ Hooks.once('init', () => {
   });
 
   game.settings.registerMenu(MODULE_ID, 'createNpcMenu', {
-    name: 'Create NPC',
-    label: 'Create NPC',
-    hint: 'Pull a stat block from Geektastic Realms and create it as an Actor in this world.',
+    name: 'Create Actor',
+    label: 'Create Actor',
+    hint: 'Pull a stat block from any category in Geektastic Realms — including custom ones like Monsters — and create it as an Actor in this world.',
     icon: 'fas fa-user-plus',
     type: CreateNpcForm,
     restricted: true,
