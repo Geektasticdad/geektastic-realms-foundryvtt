@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.6.0] - 2026-07-01
+
+### Added
+- **Stage 7 — precise item typing.** Fresh (unmatched) equipment items created for an
+  NPC now get an accurate `system.type` value/subtype and a `properties: ['mgc']` flag
+  when magical, grounded in real Foundry item exports rather than guessed — a new
+  `equipmentSubtype()` helper maps GR's item category to the correct dnd5e type/subtype
+  (e.g. `adventuring_gear` → loot/`gear`, `trinket` → equipment/`trinket`, `potion` →
+  consumable/`potion`). Also fixed a missing `weight.units: 'lb'` on every fresh item.
+  Matched items (with a compendium link) were already fully accurate, since they clone
+  the real document instead of building one.
+
+---
+
 ## [0.5.0] - 2026-07-01
 
 ### Added
@@ -105,7 +119,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   response).
 - Verified against Foundry VTT v13. Not yet tested against v14.
 
-[Unreleased]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v0.3.2...v0.4.0
 [0.3.2]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v0.3.1...v0.3.2

@@ -16,15 +16,16 @@ in the main repo for what's shipped and what's next, and
 [FOUNDRY_API.md](https://github.com/Geektasticdad/geektastic-realms/blob/main/Docs/FOUNDRY_API.md)
 for the API contract this module talks to.
 
-## Current stage: Stage 6 — icon pipeline
+## Current stage: Stage 7 — precise item typing
 
 This version registers your Geektastic Realms server URL and API token (Stage 2), syncs
 your world's Item-type compendiums so Geektastic Realms can match stat block features/
 items against what already exists (Stage 3), creates a real Actor in your world
 directly from a Geektastic Realms stat block (Stage 5) — reusing any compendium matches
 you've confirmed on the Geektastic Realms side instead of duplicating that content —
-and now gives unmatched features/items a real icon (Stage 6) if one's attached on the
-Geektastic Realms side, instead of Foundry's blank default.
+gives unmatched features/items a real icon (Stage 6) if one's attached on the
+Geektastic Realms side, and now gives unmatched equipment items an accurate Foundry
+type/subtype and magic-item flag (Stage 7) instead of a generic placeholder.
 
 ## Requirements
 

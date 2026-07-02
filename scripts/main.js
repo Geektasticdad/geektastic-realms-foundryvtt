@@ -278,19 +278,43 @@ function featureItemData(feature, imgPath) {
   return data;
 }
 
+/**
+ * Foundry item type -> a { value, key } subtype grounded in real Foundry exports
+ * (Docs/ROADMAP.md "Stage 7"), not guessed: 'trinket' matches a real trinket export,
+ * 'gear' matches a real adventuring-gear export, 'potion' is a direct match since
+ * potion is GR's own category name. Anything GR can't determine (armor tier,
+ * simple/martial weapon classification) is left blank rather than asserted.
+ */
+function equipmentSubtype(foundryType, category) {
+  if (foundryType === 'equipment') return { value: category === 'trinket' ? 'trinket' : '', key: 'baseItem' };
+  if (foundryType === 'consumable') return { value: 'potion', key: 'baseItem' };
+  if (foundryType === 'loot') return { value: category === 'adventuring_gear' ? 'gear' : '', key: 'subtype' };
+  return { value: '', key: 'baseItem' };
+}
+
 function equipmentItemData(item, imgPath) {
   const description = [item.properties, item.notes].filter(Boolean).join('\n\n');
+  const foundryType = item.foundry_type || 'loot';
+  const isMagic = !!item.requires_attunement || item.category === 'magic_item';
+  const subtype = equipmentSubtype(foundryType, item.category);
+
   const data = {
     name: item.name,
-    type: item.foundry_type || 'loot',
+    type: foundryType,
     system: {
       description: { value: description },
       quantity: item.quantity || 1,
-      weight: { value: item.weight || 0 },
+      weight: { value: item.weight || 0, units: 'lb' },
       price: { value: item.value_amount || 0, denomination: item.value_unit || 'gp' },
       attunement: item.requires_attunement ? 'required' : '',
+      attuned: false,
+      identified: true,
+      unidentified: { description: '' },
+      properties: isMagic ? ['mgc'] : [],
+      type: { value: subtype.value, [subtype.key]: '' },
     },
   };
+  if (foundryType === 'equipment') data.system.armor = { value: null, dex: null };
   if (imgPath) data.img = imgPath;
   return data;
 }
