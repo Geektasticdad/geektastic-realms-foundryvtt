@@ -11,9 +11,10 @@ client. It calls out to your Geektastic Realms instance's API — Geektastic Rea
 reaches into your Foundry world over the network.
 
 This module is being built in stages alongside the API it depends on. See
-[ROADMAP.md](https://github.com/Geektasticdad/geektastic-realms/blob/main/Docs/ROADMAP.md)
-in the main repo for what's shipped and what's next, and
-[FOUNDRY_API.md](https://github.com/Geektasticdad/geektastic-realms/blob/main/Docs/FOUNDRY_API.md)
+[ROADMAP.md](ROADMAP.md) for this module's forward plan (Stages 8+), the main repo's
+[build log](https://github.com/Geektasticdad/geektastic-realms/blob/main/Tech_Docs/ROADMAP.md)
+for the shipped Stages 1–7, and
+[FOUNDRY_API.md](https://github.com/Geektasticdad/geektastic-realms/blob/main/Tech_Docs/FOUNDRY_API.md)
 for the API contract this module talks to.
 
 ## Current stage: Stage 7 — precise item typing
