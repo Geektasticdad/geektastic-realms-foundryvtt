@@ -2,7 +2,7 @@
   "id": "geektastic-realms-foundry-connect",
   "title": "Geektastic Realms Foundry Connect",
   "description": "Connects a Foundry VTT world to a Geektastic Realms instance — read/match compendium content and create clean Actors pulled straight from your Geektastic Realms worldbuilding data.",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "compatibility": {
     "minimum": "13",
     "verified": "13"

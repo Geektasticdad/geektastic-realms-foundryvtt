@@ -9,6 +9,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.1.0] - 2026-07-18
+
+### Added
+- **Stage 9 — Actor re-sync.** Re-importing an entry that's already been created
+  in this world now **updates it in place** instead of creating a duplicate.
+  - Every Actor created (or updated) by this module is stamped with three flags:
+    `grEntryId`, `grContentHash`, and `grSyncedAt`.
+  - The Create Actor dialog now shows a per-row status — **New**, **✓ Up to
+    date**, or **↻ Changed** — by comparing each entry's `content_hash` (from
+    the GR API, requires Geektastic Realms v1.20.0+) against the hash stamped
+    on any Actor already built from it. The button reads **Update** instead of
+    **Create** wherever a matching Actor already exists.
+  - **Update** rewrites the Actor's `name`/`img`/`system` data and rebuilds
+    every embedded Item from GR's current data, but never touches the Actor's
+    folder, prototype token configuration, ownership, or active effects —
+    Foundry-side state GR has no opinion on.
+  - A second click in the same dialog session (no reopen needed) now updates
+    in place rather than creating a duplicate, immediately after a successful
+    create or update.
+
+### Changed
+- **Requires Geektastic Realms v1.20.0+** for the sync-status feature — older
+  GR versions don't return `content_hash`, so every entry with a matching
+  Actor will show as "Changed" (the safe default when the module can't confirm
+  otherwise) rather than "Up to date". Everything else in this release works
+  unchanged against older GR versions.
+
 ## [1.0.0] - 2026-07-17
 
 ### Added
@@ -180,7 +207,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   response).
 - Verified against Foundry VTT v13. Not yet tested against v14.
 
-[Unreleased]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v0.9.0...v1.0.0
 [0.9.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v0.7.0...v0.8.0

@@ -17,7 +17,7 @@ for the shipped Stages 1–7, and
 [FOUNDRY_API.md](https://github.com/Geektasticdad/geektastic-realms/blob/main/Tech_Docs/FOUNDRY_API.md)
 for the API contract this module talks to.
 
-## Current stage: Stage 8 — first real release
+## Current stage: Stage 9 — Actor re-sync
 
 This version registers your Geektastic Realms server URL and API token (Stage 2), syncs
 your world's Item-type compendiums so Geektastic Realms can match stat block features/
@@ -26,16 +26,19 @@ directly from a Geektastic Realms stat block (Stage 5) — reusing any compendiu
 you've confirmed on the Geektastic Realms side instead of duplicating that content —
 gives unmatched features/items a real icon (Stage 6) if one's attached on the
 Geektastic Realms side, gives unmatched equipment items an accurate Foundry
-type/subtype and magic-item flag (Stage 7) instead of a generic placeholder, and (Stage 8)
-now has a real release pipeline — see [RELEASING.md](RELEASING.md) — instead of manual
-folder-copy being the only install path.
+type/subtype and magic-item flag (Stage 7) instead of a generic placeholder, has a real
+release pipeline (Stage 8) — see [RELEASING.md](RELEASING.md), and (Stage 9) now
+**updates a previously-created Actor in place** when you re-import it instead of
+duplicating it — see [Re-syncing an Actor](#re-syncing-an-actor) below.
 
 ## Requirements
 
 - Foundry VTT **v13** (verified). Not yet tested against v14.
 - A running Geektastic Realms instance, with an API token generated from a world's
   **Foundry VTT Connection** panel (its dashboard page, requires the `setting.manage`
-  permission on that world).
+  permission on that world). **v1.20.0+** is needed for this version's Actor re-sync
+  status (New / Up to date / Changed) — older versions still work, but every entry
+  with a matching Actor will show as "Changed" rather than "Up to date".
 
 ## Installation
 
@@ -113,6 +116,25 @@ from the stat block's own data, picks up a real icon if the DM attached one in t
 feature/item's **Icon** field on Geektastic Realms, and gets accurate Foundry item
 typing where GR's data supports it. Progress is shown live per step (actor, then
 features/icons, then equipment/icons).
+
+## Re-syncing an Actor
+
+Every Actor created by this module is stamped with a hidden fingerprint of the stat
+block it came from. Reopen **Create Actor** any time after editing that stat block on
+the Geektastic Realms side, and each row shows one of three statuses next to its
+button:
+
+- **(no badge), Create** — nothing in this world yet.
+- **✓ Up to date, Update** — already created here, and nothing's changed on the
+  Geektastic Realms side since.
+- **↻ Changed, Update** — already created here, but the stat block has been edited
+  since — click **Update** to bring it current.
+
+Clicking **Update** rewrites the Actor's stats, portrait, and every feature/item from
+Geektastic Realms' current data — but never touches the Actor's folder, its prototype
+token configuration, ownership, or any active effects you've added at the table. Those
+are yours; Geektastic Realms doesn't manage them. Re-running Create/Update on the same
+entry never produces a second Actor.
 
 ## Development notes
 

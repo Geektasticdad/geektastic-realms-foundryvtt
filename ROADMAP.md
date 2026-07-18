@@ -16,19 +16,21 @@ tables*, then *the whole adventure*.
 
 ---
 
-## Current state (v1.0.0)
+## Current state (v1.1.0)
 
 Shipped: connection handshake (Stage 2), compendium sync (Stage 3), Actor creation from
 any GR stat block with compendium-match reuse (Stage 5), custom icons on fresh items
-(Stage 6), precise dnd5e item typing (Stage 7), a real release pipeline (Stage 8), plus
-search/category filters, a destination-folder picker, and Actor portraits from GR
-featured images (v0.7–v0.9).
+(Stage 6), precise dnd5e item typing (Stage 7), a real release pipeline (Stage 8),
+Actor re-sync (Stage 9), plus search/category filters, a destination-folder picker, and
+Actor portraits from GR featured images (v0.7–v0.9).
 
 All seven build-out stages (handshake, compendium sync, matching, Actor creation,
 icons, item typing) are now **✅ confirmed against a real Foundry world** — see the main
 repo's build log. Known debts, in rough order of risk:
 
-- **Actor creation is create-only** — re-importing an entry duplicates the Actor.
+- **Stage 9 (Actor re-sync) hasn't been verified against a live GR v1.20.0+ instance
+  yet** — the code is written and reviewed, but the create→edit→update round-trip
+  described in Stage 9's own "Verification" line below hasn't actually been run.
 - v14 compatibility is still unverified (`compatibility.verified` stays at `13` until
   actually tested there).
 
@@ -62,20 +64,32 @@ repo's build log. Known debts, in rough order of risk:
 **GR dependency:** none. **Verification:** fresh Foundry world installs the module via
 manifest URL alone and completes an end-to-end Actor creation.
 
-## Stage 9 — Actor re-sync (update instead of duplicate)
+## Stage 9 — Actor re-sync (update instead of duplicate) ✅ shipped (code-complete; live verification still open)
 
-- Stamp every created Actor with module flags: `grEntryId`, `grContentHash`,
-  `grSyncedAt`.
-- The Create Actor dialog compares list-payload hashes against world actors and shows
-  per-row status — **New** / **Up to date** / **Changed** — with **Update** replacing
-  Create where an actor already exists. Update rewrites system data and re-builds
-  items, but preserves Foundry-side customization that GR knows nothing about
-  (prototype token config, ownership, active effects added at the table).
-- A re-run is idempotent: importing twice never produces two actors.
+- [x] GR dependency shipped first, in GR v1.20.0: `content_hash` on both
+  `/npc/list` (per row) and `/npc/{id}/prepare` (top-level) — a change-detection
+  fingerprint over the exact prepare payload, computed fresh per request so it can
+  never drift from what `/prepare` actually returns. See
+  [Tech_Docs/FOUNDRY_API.md](https://github.com/Geektasticdad/geektastic-realms/blob/main/Tech_Docs/FOUNDRY_API.md)
+  in the main repo.
+- [x] Every created **or updated** Actor is stamped with module flags: `grEntryId`,
+  `grContentHash`, `grSyncedAt`.
+- [x] The Create Actor dialog compares each row's `content_hash` against any Actor
+  already flagged with that `grEntryId`, and shows per-row status — **New** /
+  **✓ Up to date** / **↻ Changed** — with the button reading **Update** instead of
+  **Create** wherever a match exists.
+- [x] **Update** rewrites `name`/`img`/`system` and rebuilds every embedded Item from
+  GR's current data, but never touches the Actor's folder, prototype token config,
+  ownership, or active effects — those keys are simply never included in the update
+  payload. A second click in the same dialog session (no reopen needed) now updates
+  in place instead of creating a duplicate.
+- [ ] **Live verification** — the round-trip below hasn't been run against a real
+  Foundry world + GR v1.20.0+ instance yet.
 
-**GR dependency:** `content_hash` on `/npc/list` and `/npc/{id}/prepare`.
-**Verification:** import an NPC, edit its stat block in GR, confirm the dialog flags it
-Changed and Update converges without a duplicate.
+**GR dependency:** `content_hash` on `/npc/list` and `/npc/{id}/prepare` — ✅ shipped
+(GR v1.20.0). **Verification:** import an NPC, edit its stat block in GR, confirm the
+dialog flags it Changed, click Update, and confirm it converges without a duplicate
+(and that folder/prototype-token/ownership/effects survive the update untouched).
 
 ## Stage 10 — Deploy Encounter
 

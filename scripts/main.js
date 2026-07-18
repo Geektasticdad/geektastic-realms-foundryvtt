@@ -334,14 +334,29 @@ function equipmentItemData(item, imgPath) {
 
 /**
  * Builds a real Actor in this world from a GR "prepare" payload (Stage 5), resolving
- * confirmed compendium matches and creating fresh Items for everything else. If the
- * entry has a featured image on the GR side (`portrait_media_id`), it's uploaded and
- * set as the Actor's own portrait `img` (not the prototype token's texture, which is
- * left at Foundry's default).
- * @param {string} [folderId] Actors-directory folder to create the Actor in; omit/empty for root.
+ * confirmed compendium matches and creating fresh Items for everything else — or, if
+ * `existingActor` is given (Stage 9), updates that Actor in place instead of creating
+ * a new one. Either way the entry has a featured image on the GR side
+ * (`portrait_media_id`), it's uploaded and set as the Actor's own portrait `img` (not
+ * the prototype token's texture, which is left at Foundry's default).
+ *
+ * Update rewrites `name`/`img`/`system` and the `grContentHash`/`grSyncedAt` flags,
+ * then clears and rebuilds every embedded Item from GR's current data — the same
+ * convergent rebuild the create path does, so re-syncing after a GR edit always
+ * matches GR exactly rather than merging or drifting. It deliberately does **not**
+ * touch the Actor's folder, prototype token config, ownership, or active effects —
+ * those are Foundry-side state GR has no opinion on, left alone by simply never
+ * including them in the update payload.
+ *
+ * @param {object} npc - the prepare payload (`GET .../npc/{id}/prepare`'s `npc` field)
+ * @param {(msg: string) => void} [onProgress]
+ * @param {string} [folderId] - Actors-directory folder for a **new** Actor; ignored when updating.
+ * @param {Actor} [existingActor] - update this Actor instead of creating a new one.
+ * @param {{entryId: number, contentHash: string}} [syncInfo] - Stage 9 stamp (`GET
+ *   .../npc/{id}/prepare`'s top-level `content_hash`, paired with the entry id).
  * @returns {Promise<Actor>}
  */
-async function createNpcInFoundry(npc, onProgress, folderId) {
+async function createNpcInFoundry(npc, onProgress, folderId, existingActor, syncInfo) {
   const iconCache = new Map();
 
   let portraitPath = null;
@@ -350,41 +365,65 @@ async function createNpcInFoundry(npc, onProgress, folderId) {
     portraitPath = await uploadIconToFoundry(npc.portrait_media_id, iconCache);
   }
 
-  onProgress?.('Creating actor…');
-
   const abilities = {};
   for (const [key, value] of Object.entries(npc.abilities || {})) {
     abilities[key] = { value };
   }
 
-  const actor = await Actor.create({
-    name: npc.name,
-    type: 'npc',
-    folder: folderId || null,
-    ...(portraitPath ? { img: portraitPath } : {}),
-    system: {
-      abilities,
-      attributes: {
-        ac: { calc: 'flat', flat: npc.armor_class },
-        hp: { value: npc.hit_points, max: npc.hit_points, formula: npc.hit_dice },
-        movement: parseMovement(npc.speed),
-        senses: parseSenses(npc.senses),
-      },
-      details: {
-        alignment: npc.alignment,
-        cr: crToDecimal(npc.challenge_rating),
-        type: { value: (npc.type || '').toLowerCase(), subtype: npc.subtype || '' },
-      },
-      traits: {
-        size: SIZE_MAP[npc.size] || 'med',
-        languages: { value: [], custom: npc.languages || '' },
-        dr: { value: [], custom: npc.damage_resistances || '' },
-        di: { value: [], custom: npc.damage_immunities || '' },
-        dv: { value: [], custom: npc.damage_vulnerabilities || '' },
-        ci: { value: [], custom: npc.condition_immunities || '' },
-      },
+  const systemData = {
+    abilities,
+    attributes: {
+      ac: { calc: 'flat', flat: npc.armor_class },
+      hp: { value: npc.hit_points, max: npc.hit_points, formula: npc.hit_dice },
+      movement: parseMovement(npc.speed),
+      senses: parseSenses(npc.senses),
     },
-  });
+    details: {
+      alignment: npc.alignment,
+      cr: crToDecimal(npc.challenge_rating),
+      type: { value: (npc.type || '').toLowerCase(), subtype: npc.subtype || '' },
+    },
+    traits: {
+      size: SIZE_MAP[npc.size] || 'med',
+      languages: { value: [], custom: npc.languages || '' },
+      dr: { value: [], custom: npc.damage_resistances || '' },
+      di: { value: [], custom: npc.damage_immunities || '' },
+      dv: { value: [], custom: npc.damage_vulnerabilities || '' },
+      ci: { value: [], custom: npc.condition_immunities || '' },
+    },
+  };
+
+  const flags = syncInfo
+    ? { [MODULE_ID]: { grEntryId: syncInfo.entryId, grContentHash: syncInfo.contentHash, grSyncedAt: new Date().toISOString() } }
+    : undefined;
+
+  let actor;
+  if (existingActor) {
+    onProgress?.('Updating actor…');
+    await existingActor.update({
+      name: npc.name,
+      ...(portraitPath ? { img: portraitPath } : {}),
+      ...(flags ? { flags } : {}),
+      system: systemData,
+    });
+    actor = existingActor;
+
+    const staleItemIds = actor.items.map((i) => i.id);
+    if (staleItemIds.length) {
+      onProgress?.('Clearing existing items…');
+      await actor.deleteEmbeddedDocuments('Item', staleItemIds);
+    }
+  } else {
+    onProgress?.('Creating actor…');
+    actor = await Actor.create({
+      name: npc.name,
+      type: 'npc',
+      folder: folderId || null,
+      ...(portraitPath ? { img: portraitPath } : {}),
+      ...(flags ? { flags } : {}),
+      system: systemData,
+    });
+  }
 
   const features = npc.features || [];
   for (let i = 0; i < features.length; i++) {
@@ -652,6 +691,21 @@ class CreateNpcForm extends FormApplicationBase {
     );
   }
 
+  /**
+   * Every Actor in this world previously created by this module, keyed by the GR
+   * entry id it was built from (Stage 9's `grEntryId` flag) — the picker's New /
+   * Up to date / Changed status for each row comes from comparing this against the
+   * list response's per-entry `content_hash`.
+   */
+  _syncedActorsByEntryId() {
+    const map = new Map();
+    for (const actor of game.actors) {
+      const entryId = actor.getFlag(MODULE_ID, 'grEntryId');
+      if (entryId != null) map.set(entryId, actor);
+    }
+    return map;
+  }
+
   async _loadList(html) {
     const status = html.find('#grfc-npc-status');
     const list = html.find('.grfc-npc-list');
@@ -677,21 +731,36 @@ class CreateNpcForm extends FormApplicationBase {
     categories.forEach((c) => categoryFilter.append(`<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`));
     categoryFilter.prop('disabled', false);
 
+    const syncedActors = this._syncedActorsByEntryId();
+
     list.empty();
     npcs.forEach((npc) => {
+      const existingActor = syncedActors.get(npc.entry_id) || null;
+      const isChanged = !!existingActor && existingActor.getFlag(MODULE_ID, 'grContentHash') !== npc.content_hash;
+      const badge = (label, color) => `<span class="grfc-npc-sync-badge" style="flex:0 0 auto;font-size:.8em;color:${color};white-space:nowrap;">${label}</span>`;
+      const syncBadgeHtml = !existingActor ? '' : isChanged ? badge('↻ Changed', '#b26a00') : badge('✓ Up to date', '#2e7d32');
+
       const li = $(`
         <li data-name="${escapeHtml((npc.name || '').toLowerCase())}" data-category="${escapeHtml(npc.category || '')}" style="display:flex;align-items:center;gap:.5rem;padding:.35rem 0;border-bottom:1px solid #7773;">
           <span style="flex:1 1 auto;min-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
             <strong>${escapeHtml(npc.name)}</strong>
             <span style="color:var(--color-text-dark-secondary,#666);font-size:.85em;"> — ${escapeHtml(npc.category || '')}${npc.challenge_rating ? ' · CR ' + escapeHtml(npc.challenge_rating) : ''}</span>
           </span>
+          ${syncBadgeHtml}
           <span class="grfc-npc-row-status" style="flex:0 0 auto;min-width:1.5em;"></span>
-          <button type="button" class="grfc-create-btn" style="flex:0 0 auto;width:auto;white-space:nowrap;padding:0 .75rem;">Create</button>
+          <button type="button" class="grfc-create-btn" style="flex:0 0 auto;width:auto;white-space:nowrap;padding:0 .75rem;">${existingActor ? 'Update' : 'Create'}</button>
         </li>
       `);
+
+      // Reassigned after a successful create/update below, so a second click in the
+      // same dialog session (no reopen needed) updates in place rather than creating
+      // a duplicate — importing/updating twice never produces two actors.
+      let rowActor = existingActor;
+
       li.find('.grfc-create-btn').on('click', async () => {
         const rowStatus = li.find('.grfc-npc-row-status');
         const btn = li.find('.grfc-create-btn');
+        const isUpdate = !!rowActor;
         btn.prop('disabled', true);
         rowStatus.text('Preparing…');
 
@@ -704,12 +773,19 @@ class CreateNpcForm extends FormApplicationBase {
 
         try {
           const folderId = html.find('.grfc-folder-select').val();
-          await createNpcInFoundry(prepared.body.npc, (msg) => rowStatus.text(msg), folderId);
-          rowStatus.text('✔ Created').css('color', '#2e7d32');
-          ui.notifications.info(`Geektastic Realms Foundry Connect: created "${npc.name}".`);
+          const syncInfo = { entryId: npc.entry_id, contentHash: prepared.body.content_hash };
+          rowActor = await createNpcInFoundry(prepared.body.npc, (msg) => rowStatus.text(msg), folderId, rowActor, syncInfo);
+
+          rowStatus.text(isUpdate ? '✔ Updated' : '✔ Created').css('color', '#2e7d32');
+          ui.notifications.info(`Geektastic Realms Foundry Connect: ${isUpdate ? 'updated' : 'created'} "${npc.name}".`);
+
+          btn.text('Update');
+          li.find('.grfc-npc-sync-badge').remove();
+          li.find('.grfc-npc-row-status').before(badge('✓ Up to date', '#2e7d32'));
         } catch (err) {
           rowStatus.text('✘').attr('title', err.message).css('color', '#c62828');
-          ui.notifications.error(`Geektastic Realms Foundry Connect: failed to create "${npc.name}" — ${err.message}`);
+          ui.notifications.error(`Geektastic Realms Foundry Connect: failed to ${isUpdate ? 'update' : 'create'} "${npc.name}" — ${err.message}`);
+        } finally {
           btn.prop('disabled', false);
         }
       });
