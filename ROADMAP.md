@@ -23,32 +23,25 @@ any GR stat block with compendium-match reuse (Stage 5), custom icons on fresh i
 (Stage 6), precise dnd5e item typing (Stage 7), plus search/category filters, a
 destination-folder picker, and Actor portraits from GR featured images (v0.7–v0.9).
 
-Known debts, in rough order of risk:
+All seven build-out stages (handshake, compendium sync, matching, Actor creation,
+icons, item typing) are now **✅ confirmed against a real Foundry world** — see the main
+repo's build log. Known debts, in rough order of risk:
 
-- **Stages 6–7 have never been verified against a real Foundry world.** Stages 2–3 were
-  confirmed at the time they shipped, and Stages 4 (matching) and 5 (Actor creation)
-  are now confirmed too — see the main repo's build log. Icons (Stage 6) and precise
-  item typing (Stage 7) are still shipped-but-unverified; each stage's verification
-  script is written in the build log.
 - **No release pipeline** — install is manual folder-copy; `module.json` advertises a
   `manifest`/`download` URL that has no published release behind it yet.
 - **Actor creation is create-only** — re-importing an entry duplicates the Actor.
 - Built on the v1 `FormApplication` API (fine on v13 via the compatibility layer; a
-  known migration cost when v14 arrives).
+  known migration cost when v14 arrives), including a long-flagged unresolved question
+  (inline comment in `scripts/main.js`) about whether it's still a bare global in v13.
 
 ---
 
-## Stage 8 — Verification pass + first real release
+## Stage 8 — First real release
 
-*No new features. Make what exists trustworthy and installable.*
+*No new features. Make what exists installable the normal way.*
 
-- Run the remaining Stage 6–7 verification scripts from the build log against a live GR
-  deployment and a real Foundry v13 world: icons on unmatched features/items → item
-  typing (magic weapon, adventuring gear, trinket, armor). (Stages 4–5 — match
-  suggestions and Actor creation with matched + unmatched content — are already
-  confirmed.) Fix what breaks; log results in the build log.
 - Resolve the long-flagged `FormApplication` global-vs-`foundry.appv1.api` question
-  while in there (one-line fix noted inline in `scripts/main.js`).
+  (one-line fix noted inline in `scripts/main.js`) while touching this code.
 - Cut **v1.0.0**: a GitHub release with a `module.zip` matching the `download` URL in
   `module.json`, so Foundry's "Install Module → Manifest URL" flow works. Add a minimal
   release checklist (bump `module.json` version, zip with correct folder name, tag).
