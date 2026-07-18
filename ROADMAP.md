@@ -16,21 +16,21 @@ tables*, then *the whole adventure*.
 
 ---
 
-## Current state (v1.1.0)
+## Current state (v1.2.0)
 
 Shipped: connection handshake (Stage 2), compendium sync (Stage 3), Actor creation from
 any GR stat block with compendium-match reuse (Stage 5), custom icons on fresh items
 (Stage 6), precise dnd5e item typing (Stage 7), a real release pipeline (Stage 8),
-Actor re-sync (Stage 9), plus search/category filters, a destination-folder picker, and
-Actor portraits from GR featured images (v0.7–v0.9).
+Actor re-sync (Stage 9), Deploy Encounter (Stage 10), plus search/category filters, a
+destination-folder picker, and Actor portraits from GR featured images (v0.7–v0.9).
 
 All seven build-out stages (handshake, compendium sync, matching, Actor creation,
 icons, item typing) are now **✅ confirmed against a real Foundry world** — see the main
 repo's build log. Known debts, in rough order of risk:
 
-- **Stage 9 (Actor re-sync) hasn't been verified against a live GR v1.20.0+ instance
-  yet** — the code is written and reviewed, but the create→edit→update round-trip
-  described in Stage 9's own "Verification" line below hasn't actually been run.
+- **Stages 9 and 10 haven't been verified against a live GR instance yet** — the code
+  for both is written and reviewed, but neither's "Verification" round-trip (below)
+  has actually been run against a real Foundry world + GR deployment.
 - v14 compatibility is still unverified (`compatibility.verified` stays at `13` until
   actually tested there).
 
@@ -91,22 +91,40 @@ manifest URL alone and completes an end-to-end Actor creation.
 dialog flags it Changed, click Update, and confirm it converges without a duplicate
 (and that folder/prototype-token/ownership/effects survive the update untouched).
 
-## Stage 10 — Deploy Encounter
+## Stage 10 — Deploy Encounter ✅ shipped (code-complete; live verification still open)
 
 *The reason Adversaries exist. One click turns a GR encounter into a ready fight.*
 
-- New **Import Encounter** dialog: pick a module → encounter (name, type, difficulty,
-  adversary roster shown), then the module creates/updates each adversary's Actor via
-  the Stage 9 pipeline, files them in an `Encounters/{name}` folder, and — optionally —
-  creates a Foundry **Combat** with one combatant per quantity (6 hobgoblins = 6
-  combatant entries referencing the one hobgoblin Actor).
-- Per-step progress like the existing Create Actor flow; failures on one adversary
-  don't abort the rest.
+- [x] GR dependency shipped first, in GR v1.21.0: `GET /api/foundry/v1/modules`
+  (module picker), `GET /api/foundry/v1/modules/{moduleId}/encounters` (encounter
+  picker, roster shown inline), and `GET /api/foundry/v1/encounter/{id}/prepare`
+  (batched prepare payload + content_hash per distinct adversary — no separate
+  `npc/{id}/prepare` round trip per creature). See
+  [Tech_Docs/FOUNDRY_API.md](https://github.com/Geektasticdad/geektastic-realms/blob/main/Tech_Docs/FOUNDRY_API.md)
+  in the main repo.
+- [x] New **Deploy Encounter** dialog: pick a module → encounter (name, type,
+  difficulty, adversary roster shown inline in the picker before committing to
+  anything).
+- [x] Each adversary's Actor is created-or-updated via the Stage 9 pipeline
+  (`syncedActorsByEntryId()` extracted to a shared helper so both pickers agree on
+  New/Up to date/Changed), filed in an `Encounters/{name}` folder (created on
+  demand, reused rather than duplicated on re-deploy).
+- [x] Optional **Combat** creation (checked by default) — one combatant per
+  quantity (6 hobgoblins = 6 combatant entries referencing the one hobgoblin
+  Actor), unlinked to a placed token until the DM drags one onto the scene; the
+  combat is activated so the tracker shows it immediately.
+- [x] Per-step progress like the existing Create Actor flow; a failure on one
+  adversary doesn't abort the rest — the dialog reports how many deployed and,
+  if any failed, which ones and why.
+- [ ] **Live verification** — the round-trip below hasn't been run against a real
+  Foundry world + GR v1.21.0+ instance yet.
 
-**GR dependency:** `GET /api/foundry/v1/encounter/{id}/prepare` (encounter metadata +
-per-adversary prepare payloads with quantities); an encounter-list endpoint per module.
-**Verification:** a 3-adversary encounter lands as a folder of actors and a pre-built
-Combat in the tracker.
+**GR dependency:** `GET /api/foundry/v1/encounter/{id}/prepare` plus the module/
+encounter list endpoints — ✅ shipped (GR v1.21.0). **Verification:** deploy a
+3-adversary encounter and confirm it lands as a folder of actors (create-or-update,
+no duplicates for creatures already synced elsewhere) and a pre-built, activated
+Combat in the tracker; confirm a deliberately-broken adversary (e.g. stat block
+removed) doesn't block the other two from deploying.
 
 ## Stage 11 — Handouts → Journal
 

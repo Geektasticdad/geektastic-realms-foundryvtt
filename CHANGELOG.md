@@ -9,6 +9,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.2.0] - 2026-07-18
+
+### Added
+- **Stage 10 — Deploy Encounter.** New **Deploy Encounter** settings menu: pick a
+  module, then one of its encounters (roster shown right in the picker — creature
+  names, quantities, type, difficulty, section), and click **Deploy** to
+  create-or-update every adversary's Actor in one action instead of pulling them in
+  one at a time via Create Actor.
+  - Deployed Actors land in an `Encounters/{name}` folder (created on demand;
+    reused on re-deploy rather than duplicated).
+  - Reuses the Stage 9 pipeline per adversary — an already-synced creature (e.g.
+    also used elsewhere in the module) is updated in place, not duplicated.
+  - Optional **"Also create a Combat encounter"** checkbox (checked by default)
+    pre-populates the Combat Tracker with one combatant per quantity (6 hobgoblins
+    = 6 combatant entries referencing the one hobgoblin Actor) and activates it —
+    a DM drags tokens onto the scene afterward and the tracker links them up.
+  - A failure on one adversary doesn't abort the rest — deploys as much of the
+    roster as it can and reports which creatures (if any) didn't come through.
+  - New helpers: `fetchModuleList()`, `fetchModuleEncounters()`,
+    `prepareEncounter()`, `findOrCreateEncounterFolder()`; `syncedActorsByEntryId()`
+    (Stage 9) extracted to a shared top-level function so both pickers use the
+    same New/Up to date/Changed logic.
+
+### Changed
+- **Requires Geektastic Realms v1.21.0+** for Deploy Encounter's three new
+  `/api/foundry/v1/*` endpoints (module list, per-module encounter list,
+  encounter prepare). Everything shipped before this release still works
+  unchanged against older GR versions.
+
 ## [1.1.0] - 2026-07-18
 
 ### Added
@@ -207,7 +236,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   response).
 - Verified against Foundry VTT v13. Not yet tested against v14.
 
-[Unreleased]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v0.9.0...v1.0.0
 [0.9.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v0.8.0...v0.9.0

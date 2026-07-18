@@ -163,6 +163,21 @@ async function prepareNpc(entryId) {
   return apiFetch(`/api/foundry/v1/npc/${entryId}/prepare`);
 }
 
+/** Fetches every adventure module in the connected GR world (Stage 10, picker step 1). */
+async function fetchModuleList() {
+  return apiFetch('/api/foundry/v1/modules');
+}
+
+/** Fetches every encounter (with its adversary roster) in one module (Stage 10, picker step 2). */
+async function fetchModuleEncounters(moduleId) {
+  return apiFetch(`/api/foundry/v1/modules/${moduleId}/encounters`);
+}
+
+/** Fetches the deploy payload for one encounter: metadata + a prepare payload/hash per distinct adversary. */
+async function prepareEncounter(encounterId) {
+  return apiFetch(`/api/foundry/v1/encounter/${encounterId}/prepare`);
+}
+
 /** MIME type -> file extension, for icons downloaded from GR's media library. */
 const ICON_MIME_EXT = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif' };
 
@@ -330,6 +345,41 @@ function equipmentItemData(item, imgPath) {
   if (foundryType === 'equipment') data.system.armor = { value: null, dex: null };
   if (imgPath) data.img = imgPath;
   return data;
+}
+
+/**
+ * Every Actor in this world previously created by this module, keyed by the GR entry
+ * id it was built from (Stage 9's `grEntryId` flag) — shared by the Create Actor
+ * picker (New / Up to date / Changed per row) and the Deploy Encounter picker (Stage
+ * 10, same status logic per adversary).
+ */
+function syncedActorsByEntryId() {
+  const map = new Map();
+  for (const actor of game.actors) {
+    const entryId = actor.getFlag(MODULE_ID, 'grEntryId');
+    if (entryId != null) map.set(entryId, actor);
+  }
+  return map;
+}
+
+/**
+ * Finds or creates the top-level "Encounters" Actor folder, and within it a subfolder
+ * named after this encounter (Stage 10) — every adversary Actor a Deploy Encounter
+ * run creates lands in `Encounters/{name}`, the same organization a DM would build by
+ * hand. Existing folders are reused (by name + parent), so re-deploying the same
+ * encounter later doesn't scatter duplicate folders.
+ * @returns {Promise<string>} the encounter subfolder's id
+ */
+async function findOrCreateEncounterFolder(encounterName) {
+  let parent = game.folders.find((f) => f.type === 'Actor' && !f.folder && f.name === 'Encounters');
+  if (!parent) {
+    parent = await Folder.create({ name: 'Encounters', type: 'Actor', folder: null });
+  }
+  let child = game.folders.find((f) => f.type === 'Actor' && f.folder === parent.id && f.name === encounterName);
+  if (!child) {
+    child = await Folder.create({ name: encounterName, type: 'Actor', folder: parent.id });
+  }
+  return child.id;
 }
 
 /**
@@ -691,21 +741,6 @@ class CreateNpcForm extends FormApplicationBase {
     );
   }
 
-  /**
-   * Every Actor in this world previously created by this module, keyed by the GR
-   * entry id it was built from (Stage 9's `grEntryId` flag) — the picker's New /
-   * Up to date / Changed status for each row comes from comparing this against the
-   * list response's per-entry `content_hash`.
-   */
-  _syncedActorsByEntryId() {
-    const map = new Map();
-    for (const actor of game.actors) {
-      const entryId = actor.getFlag(MODULE_ID, 'grEntryId');
-      if (entryId != null) map.set(entryId, actor);
-    }
-    return map;
-  }
-
   async _loadList(html) {
     const status = html.find('#grfc-npc-status');
     const list = html.find('.grfc-npc-list');
@@ -731,7 +766,7 @@ class CreateNpcForm extends FormApplicationBase {
     categories.forEach((c) => categoryFilter.append(`<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`));
     categoryFilter.prop('disabled', false);
 
-    const syncedActors = this._syncedActorsByEntryId();
+    const syncedActors = syncedActorsByEntryId();
 
     list.empty();
     npcs.forEach((npc) => {
@@ -794,6 +829,204 @@ class CreateNpcForm extends FormApplicationBase {
   }
 }
 
+/**
+ * Deploys a whole GR encounter's adversary roster into Foundry in one action
+ * (Stage 10) — pick a module, then one of its encounters, and every adversary's
+ * Actor is created-or-updated (reusing the Stage 9 pipeline) into an
+ * `Encounters/{name}` folder, optionally with a Foundry Combat pre-populated with
+ * one combatant per quantity (an "unlinked" combatant — actorId only, no placed
+ * token — the same shape Foundry's own Combat Tracker "add non-token combatant"
+ * flow produces; the DM drags tokens onto the scene later and the tracker links
+ * them up). A failure on one adversary doesn't abort the rest — this deploys as
+ * much of the roster as it can rather than being all-or-nothing.
+ */
+class ImportEncounterForm extends FormApplicationBase {
+  static get defaultOptions() {
+    return foundry.utils.mergeObject(super.defaultOptions, {
+      id: 'grfc-import-encounter',
+      title: 'Geektastic Realms — Deploy Encounter',
+      width: 640,
+      height: 600,
+      closeOnSubmit: false,
+      resizable: true,
+    });
+  }
+
+  getData() {
+    return {};
+  }
+
+  async _renderInner() {
+    const html = `
+      <form class="grfc-import-encounter" style="padding:.5rem;display:flex;flex-direction:column;height:100%;box-sizing:border-box;">
+        <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.5rem;">
+          <label style="white-space:nowrap;color:var(--color-text-dark-secondary,#666);font-size:.85em;">Module:</label>
+          <select class="grfc-module-select" style="flex:1 1 auto;min-width:0;" disabled>
+            <option value="">Loading modules…</option>
+          </select>
+        </div>
+        <label style="display:flex;align-items:center;gap:.4rem;margin-bottom:.5rem;font-size:.9em;">
+          <input type="checkbox" class="grfc-create-combat" checked>
+          Also create a Combat encounter (one combatant per creature)
+        </label>
+        <p id="grfc-encounter-status" style="color:var(--color-text-dark-secondary,#666);margin:.25rem 0 .5rem;">Loading modules…</p>
+        <ul class="grfc-encounter-list" style="list-style:none;margin:0;padding:0;flex:1 1 auto;overflow-y:auto"></ul>
+      </form>
+    `;
+    return $(html);
+  }
+
+  activateListeners(html) {
+    super.activateListeners(html);
+    this._loadModules(html);
+    html.find('.grfc-module-select').on('change', () => this._loadEncounters(html));
+  }
+
+  async _loadModules(html) {
+    const select = html.find('.grfc-module-select');
+    const status = html.find('#grfc-encounter-status');
+
+    const result = await fetchModuleList();
+    if (!result.ok) {
+      status.text(`✘ ${result.error}`).css('color', '#c62828');
+      return;
+    }
+
+    const modules = result.body.modules || [];
+    select.empty();
+    if (modules.length === 0) {
+      select.append('<option value="">No modules in this world</option>');
+      status.text('No adventure modules found in this Geektastic Realms world.');
+      return;
+    }
+
+    select.append('<option value="">Choose a module…</option>');
+    modules.forEach((m) => select.append(`<option value="${m.id}">${escapeHtml(m.title)}</option>`));
+    select.prop('disabled', false);
+    status.text('Choose a module to see its encounters.');
+  }
+
+  async _loadEncounters(html) {
+    const moduleId = html.find('.grfc-module-select').val();
+    const list = html.find('.grfc-encounter-list');
+    const status = html.find('#grfc-encounter-status');
+    list.empty();
+
+    if (!moduleId) {
+      status.text('Choose a module to see its encounters.');
+      return;
+    }
+
+    status.text('Loading encounters…');
+    const result = await fetchModuleEncounters(moduleId);
+    if (!result.ok) {
+      status.text(`✘ ${result.error}`).css('color', '#c62828');
+      return;
+    }
+
+    const encounters = result.body.encounters || [];
+    if (encounters.length === 0) {
+      status.text('No encounters in this module.');
+      return;
+    }
+    status.text(`${encounters.length} encounter${encounters.length === 1 ? '' : 's'} in this module.`);
+
+    const syncedActors = syncedActorsByEntryId();
+
+    encounters.forEach((encounter) => {
+      const adversaries = encounter.adversaries || [];
+      const rosterText = adversaries.length === 0
+        ? 'No adversaries attached.'
+        : adversaries.map((a) => `${a.quantity}× ${a.name}`).join(', ');
+      const totalCreatures = adversaries.reduce((sum, a) => sum + a.quantity, 0);
+
+      const li = $(`
+        <li style="padding:.5rem 0;border-bottom:1px solid #7773;">
+          <div style="display:flex;align-items:center;gap:.5rem;">
+            <span style="flex:1 1 auto;min-width:0;">
+              <strong>${escapeHtml(encounter.name)}</strong>
+              <span style="color:var(--color-text-dark-secondary,#666);font-size:.85em;">
+                — ${escapeHtml(encounter.encounter_type || '')}${encounter.difficulty ? ' · ' + escapeHtml(encounter.difficulty) : ''}${encounter.section_title ? ' · ' + escapeHtml(encounter.section_title) : ''}
+              </span>
+            </span>
+            <span class="grfc-encounter-row-status" style="flex:0 0 auto;min-width:1.5em;text-align:right;"></span>
+            <button type="button" class="grfc-deploy-btn" style="flex:0 0 auto;width:auto;white-space:nowrap;padding:0 .75rem;" ${adversaries.length === 0 ? 'disabled' : ''}>Deploy</button>
+          </div>
+          <div style="color:var(--color-text-dark-secondary,#666);font-size:.85em;margin-top:.15rem;">${escapeHtml(rosterText)}${totalCreatures ? ` (${totalCreatures} total)` : ''}</div>
+        </li>
+      `);
+
+      li.find('.grfc-deploy-btn').on('click', async () => {
+        const rowStatus = li.find('.grfc-encounter-row-status');
+        const btn = li.find('.grfc-deploy-btn');
+        btn.prop('disabled', true);
+        rowStatus.text('Preparing…');
+
+        const prepared = await prepareEncounter(encounter.id);
+        if (!prepared.ok) {
+          rowStatus.text('✘').attr('title', prepared.error).css('color', '#c62828');
+          btn.prop('disabled', false);
+          return;
+        }
+
+        const createCombat = html.find('.grfc-create-combat').is(':checked');
+        const preparedAdversaries = prepared.body.adversaries || [];
+        const folderId = await findOrCreateEncounterFolder(prepared.body.encounter?.name || encounter.name);
+
+        const deployed = [];
+        const failed = [];
+        for (let i = 0; i < preparedAdversaries.length; i++) {
+          const adv = preparedAdversaries[i];
+          rowStatus.text(`Deploying… (${i + 1}/${preparedAdversaries.length})`);
+          try {
+            const existingActor = syncedActors.get(adv.entry_id) || null;
+            const syncInfo = { entryId: adv.entry_id, contentHash: adv.content_hash };
+            const actor = await createNpcInFoundry(
+              adv.npc,
+              (msg) => rowStatus.text(`${adv.name}: ${msg}`),
+              folderId,
+              existingActor,
+              syncInfo
+            );
+            syncedActors.set(adv.entry_id, actor);
+            deployed.push({ actor, quantity: adv.quantity });
+          } catch (err) {
+            failed.push({ name: adv.name, error: err.message });
+          }
+        }
+
+        if (createCombat && deployed.length > 0) {
+          rowStatus.text('Building combat…');
+          try {
+            const combat = await Combat.create({});
+            const combatants = [];
+            for (const { actor, quantity } of deployed) {
+              for (let n = 0; n < quantity; n++) combatants.push({ actorId: actor.id });
+            }
+            if (combatants.length) await combat.createEmbeddedDocuments('Combatant', combatants);
+            await combat.activate();
+          } catch (err) {
+            failed.push({ name: '(combat tracker)', error: err.message });
+          }
+        }
+
+        btn.prop('disabled', false);
+        if (failed.length === 0) {
+          rowStatus.text('✔ Deployed').css('color', '#2e7d32');
+          ui.notifications.info(
+            `Geektastic Realms Foundry Connect: deployed "${encounter.name}" (${deployed.length} adversar${deployed.length === 1 ? 'y' : 'ies'}${createCombat ? ', combat created' : ''}).`
+          );
+        } else {
+          rowStatus.text(`⚠ ${failed.length} failed`).attr('title', failed.map((f) => `${f.name}: ${f.error}`).join('\n')).css('color', '#b26a00');
+          ui.notifications.warn(`Geektastic Realms Foundry Connect: deployed "${encounter.name}" with ${failed.length} failure(s) — see row for details.`);
+        }
+      });
+
+      list.append(li);
+    });
+  }
+}
+
 Hooks.once('init', () => {
   game.settings.register(MODULE_ID, 'serverUrl', {
     name: 'Geektastic Realms Server URL',
@@ -848,6 +1081,15 @@ Hooks.once('init', () => {
     hint: 'Pull a stat block from any category in Geektastic Realms — including custom ones like Monsters — and create it as an Actor in this world.',
     icon: 'fas fa-user-plus',
     type: CreateNpcForm,
+    restricted: true,
+  });
+
+  game.settings.registerMenu(MODULE_ID, 'importEncounterMenu', {
+    name: 'Deploy Encounter',
+    label: 'Deploy Encounter',
+    hint: 'Pick a module and one of its encounters, and create/update every adversary\'s Actor in this world in one action — optionally with a pre-built Combat.',
+    icon: 'fas fa-people-group',
+    type: ImportEncounterForm,
     restricted: true,
   });
 });

@@ -17,7 +17,7 @@ for the shipped Stages 1–7, and
 [FOUNDRY_API.md](https://github.com/Geektasticdad/geektastic-realms/blob/main/Tech_Docs/FOUNDRY_API.md)
 for the API contract this module talks to.
 
-## Current stage: Stage 9 — Actor re-sync
+## Current stage: Stage 10 — Deploy Encounter
 
 This version registers your Geektastic Realms server URL and API token (Stage 2), syncs
 your world's Item-type compendiums so Geektastic Realms can match stat block features/
@@ -27,18 +27,21 @@ you've confirmed on the Geektastic Realms side instead of duplicating that conte
 gives unmatched features/items a real icon (Stage 6) if one's attached on the
 Geektastic Realms side, gives unmatched equipment items an accurate Foundry
 type/subtype and magic-item flag (Stage 7) instead of a generic placeholder, has a real
-release pipeline (Stage 8) — see [RELEASING.md](RELEASING.md), and (Stage 9) now
-**updates a previously-created Actor in place** when you re-import it instead of
-duplicating it — see [Re-syncing an Actor](#re-syncing-an-actor) below.
+release pipeline (Stage 8) — see [RELEASING.md](RELEASING.md), updates a
+previously-created Actor in place when you re-import it instead of duplicating it
+(Stage 9) — see [Re-syncing an Actor](#re-syncing-an-actor), and (Stage 10) can now
+**deploy a whole encounter's adversary roster in one action** — see
+[Deploying an Encounter](#deploying-an-encounter) below.
 
 ## Requirements
 
 - Foundry VTT **v13** (verified). Not yet tested against v14.
 - A running Geektastic Realms instance, with an API token generated from a world's
   **Foundry VTT Connection** panel (its dashboard page, requires the `setting.manage`
-  permission on that world). **v1.20.0+** is needed for this version's Actor re-sync
-  status (New / Up to date / Changed) — older versions still work, but every entry
-  with a matching Actor will show as "Changed" rather than "Up to date".
+  permission on that world). **v1.20.0+** is needed for Actor re-sync status (New /
+  Up to date / Changed) — older versions still work, but every entry with a matching
+  Actor will show as "Changed" rather than "Up to date". **v1.21.0+** is needed for
+  Deploy Encounter's module/encounter pickers.
 
 ## Installation
 
@@ -135,6 +138,28 @@ Geektastic Realms' current data — but never touches the Actor's folder, its pr
 token configuration, ownership, or any active effects you've added at the table. Those
 are yours; Geektastic Realms doesn't manage them. Re-running Create/Update on the same
 entry never produces a second Actor.
+
+## Deploying an Encounter
+
+In Module Settings, click **Deploy Encounter**. Pick a **Module** from the dropdown,
+and every encounter in it appears below — name, type, difficulty, which section it's
+in, and its full adversary roster (e.g. "3× Goblin, 1× Goblin Boss") right in the list,
+so you can see what you're about to deploy before committing to anything.
+
+Click **Deploy** next to the one you want. Every adversary's Actor is created (or
+updated in place, per [Re-syncing an Actor](#re-syncing-an-actor) above, if it already
+exists somewhere in this world) into an `Encounters/{encounter name}` folder — created
+on demand, and reused rather than duplicated if you deploy the same encounter again
+later. A failure on one creature doesn't stop the rest; you'll see how many succeeded
+and, if any failed, which ones and why.
+
+Leave **"Also create a Combat encounter"** checked (the default) and a Combat is
+built alongside the Actors, with one combatant per quantity — 6 hobgoblins in the
+roster means 6 combatant entries in the tracker, all referencing the one hobgoblin
+Actor. These combatants aren't tied to placed tokens yet; drag tokens onto your scene
+afterward and Foundry's tracker links them up, the same as adding any non-token
+combatant by hand. Uncheck the box if you'd rather just get the Actors and build the
+combat yourself.
 
 ## Development notes
 
