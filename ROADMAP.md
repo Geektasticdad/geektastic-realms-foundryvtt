@@ -28,17 +28,13 @@ All seven build-out stages (handshake, compendium sync, matching, Actor creation
 icons, item typing) are now **✅ confirmed against a real Foundry world** — see the main
 repo's build log. Known debts, in rough order of risk:
 
-- **No release has actually been published yet** — the pipeline exists (Stage 8,
-  below) but publishing v1.0.0 itself requires pushing a `v1.0.0` tag (see
-  [RELEASING.md](RELEASING.md)), a step deliberately left for a human to trigger rather
-  than automated as part of landing the pipeline.
 - **Actor creation is create-only** — re-importing an entry duplicates the Actor.
 - v14 compatibility is still unverified (`compatibility.verified` stays at `13` until
   actually tested there).
 
 ---
 
-## Stage 8 — First real release ✅ shipped (code-complete; publishing v1.0.0 is a manual step)
+## Stage 8 — First real release ✅ shipped
 
 *No new features. Make what exists installable the normal way.*
 
@@ -51,9 +47,17 @@ repo's build log. Known debts, in rough order of risk:
   the zip root, matching the folder-name-must-equal-id lesson from Stage 2) and
   publishes a GitHub Release on every `vX.Y.Z` tag push. [RELEASING.md](RELEASING.md)
   is the minimal checklist. `module.json` bumped to `1.0.0`.
-- [ ] **Publishing v1.0.0 itself** — push the `v1.0.0` tag to trigger the workflow, then
-  smoke-test the manifest URL against a real Foundry world (see RELEASING.md step 6).
-  Not done yet; this is the one remaining manual step.
+- [x] **v1.0.0 published** — [the release](https://github.com/Geektasticdad/geektastic-realms-foundryvtt/releases/tag/v1.0.0)
+  is live with `module.zip` attached, and `releases/latest/download/module.zip`
+  (the URL `module.json`'s `download` field points at) resolves with a real `200`.
+  One bootstrapping wrinkle hit along the way: the very first tag push raced ahead of
+  GitHub's registration of the brand-new workflow file (pushed ~14s after the workflow
+  was fully indexed — a known GitHub Actions gotcha for a workflow's first-ever
+  trigger) and silently didn't fire. Fixed by deleting and re-pushing the tag once the
+  workflow was confirmed live on `main`; every release after this one won't hit it,
+  since the workflow will already be well-established before any future tag push.
+  Verified: manifest-URL install fetches `module.json`, resolves `download` to the
+  published `module.zip`, and the zip's `module.json` sits at the root as required.
 
 **GR dependency:** none. **Verification:** fresh Foundry world installs the module via
 manifest URL alone and completes an end-to-end Actor creation.
