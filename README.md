@@ -17,7 +17,7 @@ for the shipped Stages 1–7, and
 [FOUNDRY_API.md](https://github.com/Geektasticdad/geektastic-realms/blob/main/Tech_Docs/FOUNDRY_API.md)
 for the API contract this module talks to.
 
-## Current stage: Stage 7 — precise item typing
+## Current stage: Stage 8 — first real release
 
 This version registers your Geektastic Realms server URL and API token (Stage 2), syncs
 your world's Item-type compendiums so Geektastic Realms can match stat block features/
@@ -25,8 +25,10 @@ items against what already exists (Stage 3), creates a real Actor in your world
 directly from a Geektastic Realms stat block (Stage 5) — reusing any compendium matches
 you've confirmed on the Geektastic Realms side instead of duplicating that content —
 gives unmatched features/items a real icon (Stage 6) if one's attached on the
-Geektastic Realms side, and now gives unmatched equipment items an accurate Foundry
-type/subtype and magic-item flag (Stage 7) instead of a generic placeholder.
+Geektastic Realms side, gives unmatched equipment items an accurate Foundry
+type/subtype and magic-item flag (Stage 7) instead of a generic placeholder, and (Stage 8)
+now has a real release pipeline — see [RELEASING.md](RELEASING.md) — instead of manual
+folder-copy being the only install path.
 
 ## Requirements
 
@@ -37,13 +39,24 @@ type/subtype and magic-item flag (Stage 7) instead of a generic placeholder.
 
 ## Installation
 
-**Manual install** (no release/manifest-URL flow yet):
+**Manifest URL** (once a release has been published — see [RELEASING.md](RELEASING.md)):
+
+1. In Foundry's Setup screen, go to **Add-on Modules → Install Module**.
+2. Paste the manifest URL:
+   `https://raw.githubusercontent.com/Geektasticdad/geektastic-realms-foundryvtt/main/module.json`
+3. Click **Install** — Foundry fetches `module.json`, follows its `download` link to the
+   latest GitHub Release's `module.zip`, and installs it for you.
+
+**Manual install** (always available, no release required):
 
 1. Download or clone this repository.
 2. Copy the whole folder into your Foundry `Data/modules/` directory, so you end up
    with `Data/modules/geektastic-realms-foundry-connect/module.json`.
 3. Restart Foundry (or refresh the Setup page) and enable **Geektastic Realms Foundry
    Connect** in your world's Manage Modules screen.
+
+Either way, enable **Geektastic Realms Foundry Connect** in your world's Manage Modules
+screen once installed.
 
 ## Configuration
 
@@ -107,11 +120,11 @@ features/icons, then equipment/icons).
   `scripts/main.js` directly and reload Foundry to test changes.
 - Built against the classic `FormApplication`/`Application` v1 API rather than v13's
   newer `ApplicationV2` — v1 remains supported via Foundry's compatibility layer and is
-  the better-documented, less version-fragile choice for a module this small.
-- See the comment above `TestConnectionForm` in `scripts/main.js` for one detail that
-  couldn't be verified without a live v13 instance (whether `FormApplication` is still a
-  bare global or needs `foundry.appv1.api.FormApplication`) — fix noted inline if you hit
-  it. `CompendiumSyncForm` shares the same base class and the same caveat.
+  the better-documented, less version-fragile choice for a module this small. All three
+  dialogs extend a `FormApplicationBase` constant (`scripts/main.js`) that resolves to
+  `foundry.appv1.api.FormApplication` if present, falling back to the bare
+  `FormApplication` global otherwise — covers both v13 variants without needing to know
+  ahead of time which one a given build exposes.
 - The `syncPacks` world setting (your saved pack selection) is intentionally not in the
   visible Module Settings list (`config: false`) — it's managed entirely through the
   Sync Compendiums dialog's checkboxes.

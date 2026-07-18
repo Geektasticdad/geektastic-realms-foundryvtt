@@ -26,6 +26,18 @@
 
 const MODULE_ID = 'geektastic-realms-foundry-connect';
 
+/**
+ * v13 moved several v1 Application classes under a `foundry.appv1.api` namespace but
+ * (as of v13) kept a bare global alias for backward compatibility, with a deprecation
+ * warning on use. Rather than hardcode one form and risk breaking on whichever variant
+ * a given build doesn't have, resolve defensively at load time: prefer the namespaced
+ * class if present (silences the deprecation warning, and keeps working if a future
+ * release drops the bare global), falling back to the bare global for older v13
+ * builds that predate the namespace. This removes the need to verify which form a
+ * live instance expects — both are covered.
+ */
+const FormApplicationBase = globalThis.foundry?.appv1?.api?.FormApplication ?? globalThis.FormApplication;
+
 /** Entries per POST to /compendium/sync — keeps individual requests small for large packs. */
 const SYNC_CHUNK_SIZE = 100;
 
@@ -401,16 +413,8 @@ async function createNpcInFoundry(npc, onProgress, folderId) {
 
 /**
  * Small dialog with a "Test Connection" button, opened from the module settings menu.
- *
- * NOTE (unverified against a live v13 instance): if this throws
- * "FormApplication is not defined" or logs a deprecation warning on your Foundry
- * install, change the line below to
- * `class TestConnectionForm extends foundry.appv1.api.FormApplication {` — v13
- * namespaced several v1 Application classes but has historically kept a bare
- * global alias for backward compatibility; which form your specific build expects
- * can only be confirmed by loading the module for real.
  */
-class TestConnectionForm extends FormApplication {
+class TestConnectionForm extends FormApplicationBase {
   static get defaultOptions() {
     return foundry.utils.mergeObject(super.defaultOptions, {
       id: 'grfc-test-connection',
@@ -472,10 +476,9 @@ class TestConnectionForm extends FormApplication {
  * Choose which Item-type compendium packs to sync, and sync them. Selection is
  * persisted to the `syncPacks` world setting; syncing reads whatever is checked at
  * click time (not necessarily saved first) so "check a few boxes and go" works in
- * one step. See the FormApplication/ApplicationV2 note above TestConnectionForm —
- * the same caveat applies here.
+ * one step.
  */
-class CompendiumSyncForm extends FormApplication {
+class CompendiumSyncForm extends FormApplicationBase {
   static get defaultOptions() {
     return foundry.utils.mergeObject(super.defaultOptions, {
       id: 'grfc-compendium-sync',
@@ -564,7 +567,7 @@ class CompendiumSyncForm extends FormApplication {
  * here on request (Stage 5) — a "pull" model, so GR never needs this Foundry instance
  * to be reachable over the network; the module only ever calls out to GR.
  */
-class CreateNpcForm extends FormApplication {
+class CreateNpcForm extends FormApplicationBase {
   static get defaultOptions() {
     return foundry.utils.mergeObject(super.defaultOptions, {
       id: 'grfc-create-npc',

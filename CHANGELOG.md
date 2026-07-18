@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.0] - 2026-07-17
+
+### Added
+- **Stage 8 — first real release.** A GitHub Actions workflow
+  (`.github/workflows/release.yml`) builds `module.zip` and publishes a
+  GitHub Release on every `vX.Y.Z` tag push, so `module.json`'s `download`
+  URL (Foundry's "Install Module → Manifest URL" flow) resolves to a real
+  artifact instead of 404ing — previously the only install path was a manual
+  folder copy. See [RELEASING.md](RELEASING.md) for the release checklist.
+
+### Fixed
+- **Resolved the long-flagged `FormApplication` global-vs-namespaced question**
+  without needing a live v13 instance to test both branches: all three
+  dialogs (`TestConnectionForm`, `CompendiumSyncForm`, `CreateNpcForm`) now
+  extend a `FormApplicationBase` constant that resolves to
+  `foundry.appv1.api.FormApplication` if present, falling back to the bare
+  `FormApplication` global otherwise — covers both v13 variants rather than
+  gambling on one.
+
+---
+
 ## [0.9.0] - 2026-07-01
 
 ### Added
@@ -159,7 +180,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   response).
 - Verified against Foundry VTT v13. Not yet tested against v14.
 
-[Unreleased]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v0.9.0...v1.0.0
 [0.9.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v0.6.0...v0.7.0

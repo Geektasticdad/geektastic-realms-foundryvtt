@@ -16,35 +16,44 @@ tables*, then *the whole adventure*.
 
 ---
 
-## Current state (v0.9.0)
+## Current state (v1.0.0)
 
 Shipped: connection handshake (Stage 2), compendium sync (Stage 3), Actor creation from
 any GR stat block with compendium-match reuse (Stage 5), custom icons on fresh items
-(Stage 6), precise dnd5e item typing (Stage 7), plus search/category filters, a
-destination-folder picker, and Actor portraits from GR featured images (v0.7–v0.9).
+(Stage 6), precise dnd5e item typing (Stage 7), a real release pipeline (Stage 8), plus
+search/category filters, a destination-folder picker, and Actor portraits from GR
+featured images (v0.7–v0.9).
 
 All seven build-out stages (handshake, compendium sync, matching, Actor creation,
 icons, item typing) are now **✅ confirmed against a real Foundry world** — see the main
 repo's build log. Known debts, in rough order of risk:
 
-- **No release pipeline** — install is manual folder-copy; `module.json` advertises a
-  `manifest`/`download` URL that has no published release behind it yet.
+- **No release has actually been published yet** — the pipeline exists (Stage 8,
+  below) but publishing v1.0.0 itself requires pushing a `v1.0.0` tag (see
+  [RELEASING.md](RELEASING.md)), a step deliberately left for a human to trigger rather
+  than automated as part of landing the pipeline.
 - **Actor creation is create-only** — re-importing an entry duplicates the Actor.
-- Built on the v1 `FormApplication` API (fine on v13 via the compatibility layer; a
-  known migration cost when v14 arrives), including a long-flagged unresolved question
-  (inline comment in `scripts/main.js`) about whether it's still a bare global in v13.
+- v14 compatibility is still unverified (`compatibility.verified` stays at `13` until
+  actually tested there).
 
 ---
 
-## Stage 8 — First real release
+## Stage 8 — First real release ✅ shipped (code-complete; publishing v1.0.0 is a manual step)
 
 *No new features. Make what exists installable the normal way.*
 
-- Resolve the long-flagged `FormApplication` global-vs-`foundry.appv1.api` question
-  (one-line fix noted inline in `scripts/main.js`) while touching this code.
-- Cut **v1.0.0**: a GitHub release with a `module.zip` matching the `download` URL in
-  `module.json`, so Foundry's "Install Module → Manifest URL" flow works. Add a minimal
-  release checklist (bump `module.json` version, zip with correct folder name, tag).
+- [x] Resolved the long-flagged `FormApplication` global-vs-`foundry.appv1.api`
+  question — rather than pick one and require live-instance verification, all three
+  dialogs now extend a `FormApplicationBase` constant that resolves to the namespaced
+  class if present, falling back to the bare global otherwise. Covers both v13
+  variants; no longer a known gap.
+- [x] Release pipeline: `.github/workflows/release.yml` builds `module.zip` (files at
+  the zip root, matching the folder-name-must-equal-id lesson from Stage 2) and
+  publishes a GitHub Release on every `vX.Y.Z` tag push. [RELEASING.md](RELEASING.md)
+  is the minimal checklist. `module.json` bumped to `1.0.0`.
+- [ ] **Publishing v1.0.0 itself** — push the `v1.0.0` tag to trigger the workflow, then
+  smoke-test the manifest URL against a real Foundry world (see RELEASING.md step 6).
+  Not done yet; this is the one remaining manual step.
 
 **GR dependency:** none. **Verification:** fresh Foundry world installs the module via
 manifest URL alone and completes an end-to-end Actor creation.

@@ -1,0 +1,45 @@
+name: Release
+
+# Fires on a version tag push (e.g. `v1.0.0`) — see RELEASING.md for the full
+# checklist. Builds module.zip and publishes a GitHub Release so Foundry's
+# "Install Module -> Manifest URL" flow (module.json's `manifest`/`download`
+# fields) has a real artifact to fetch, instead of manual folder-copy only.
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify module.json version matches the tag
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          MODULE_VERSION="$(grep -oP '"version"\s*:\s*"\K[^"]+' module.json)"
+          if [ "$TAG_VERSION" != "$MODULE_VERSION" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match module.json version $MODULE_VERSION"
+            exit 1
+          fi
+
+      - name: Build module.zip
+        run: |
+          # Files sit at the zip root (no wrapping folder) — Foundry's installer
+          # creates Data/modules/<id>/ itself from module.json's id and extracts
+          # the zip's contents directly into it. A wrapping folder here would
+          # reproduce the "folder name must match id exactly" bug already hit
+          # once during manual install (see Stage 2 in the main repo's build log).
+          zip -r module.zip module.json scripts README.md CHANGELOG.md LICENSE
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: module.zip
+          generate_release_notes: true
