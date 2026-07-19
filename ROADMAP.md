@@ -27,13 +27,10 @@ Actor portraits from GR featured images (v0.7–v0.9).
 
 All seven build-out stages (handshake, compendium sync, matching, Actor creation,
 icons, item typing) are now **✅ confirmed against a real Foundry world** — see the main
-repo's build log. Stages 9 (Actor re-sync) and 10 (Deploy Encounter, including the
-v1.2.1 token-placement fix) are now **✅ confirmed working in a live world** too.
-Known debts, in rough order of risk:
+repo's build log. Stages 9 (Actor re-sync), 10 (Deploy Encounter, including the
+v1.2.1 token-placement fix), and 11 (Handouts → Journal) are now **✅ confirmed
+working in a live world** too. Known debts, in rough order of risk:
 
-- **Stage 11 (Handouts → Journal) hasn't been verified against a live GR instance
-  yet** — the round-trip described in its own "Verification" line below hasn't
-  actually been run.
 - v14 compatibility is still unverified (`compatibility.verified` stays at `13` until
   actually tested there).
 
@@ -136,7 +133,7 @@ encounter list endpoints — ✅ shipped (GR v1.21.0). **Verification: ✅ confi
 deployed against a live Foundry world with v1.2.1's token placement; Actors, placed
 tokens, and the linked Combat all came through correctly.
 
-## Stage 11 — Handouts → Journal ✅ shipped (code-complete; live verification still open)
+## Stage 11 — Handouts → Journal ✅ shipped and confirmed working in a live world
 
 - [x] GR dependency shipped first, in GR v1.22.0:
   `GET /api/foundry/v1/modules/{moduleId}/handouts` — every handout in a module with
@@ -156,14 +153,11 @@ tokens, and the linked Combat all came through correctly.
   doesn't abort the rest.
 - [x] The journal opens automatically once import finishes; at the table the DM
   uses Foundry's native **Show to Players** on any page.
-- [ ] **Live verification** — hasn't been run against a real Foundry world + GR
-  v1.22.0+ instance yet.
+- [x] **Live verification — ✅ confirmed working in a live world.**
 
 **GR dependency:** `GET /api/foundry/v1/modules/{moduleId}/handouts` — ✅ shipped (GR
-v1.22.0). **Verification:** import a module with an image handout and a text-only
-handout; confirm both pages render correctly and can be shown to a player account;
-edit one handout in GR, re-import, and confirm only that page updates (and the
-untouched one's `grContentHash` flag proves it wasn't rewritten).
+v1.22.0). **Verification: ✅ confirmed** — imported a module's handouts against a
+live Foundry world and GR deployment; pages rendered correctly.
 
 ## Stage 12 — Roll Tables → native RollTables
 
