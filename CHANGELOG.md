@@ -9,6 +9,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.3.0] - 2026-07-19
+
+### Added
+- **Stage 11 — Handouts → Journal.** New **Import Handouts** settings menu: pick a
+  module, preview each handout's status (New / ✓ Up to date / ↻ Changed), and click
+  **Import Handouts** to bring the whole module's handouts into one Journal Entry —
+  a page per handout, image embedded above the rich-text body — ready for
+  Foundry's native **Show to Players** at the table.
+  - One Journal Entry per module, flagged with `grModuleId` so it's found and
+    reused (not duplicated) on re-import, even if the module or journal gets
+    renamed afterward.
+  - Each page is flagged with `grHandoutId`/`grContentHash`; re-importing only
+    touches pages whose handout actually changed since last time (same
+    change-detection approach as Stage 9/10) — unchanged handouts are left alone
+    entirely, not re-uploaded or re-written.
+  - A failure on one handout doesn't abort the rest; the result reports how many
+    were created/updated/already up to date, and which (if any) failed and why.
+  - Handout images reuse the existing Stage 6 icon-fetch/upload pipeline
+    (`uploadIconToFoundry()`) — no new download path needed.
+  - New helpers: `fetchModuleHandouts()`, `findModuleJournal()`,
+    `handoutPageContent()`, `importHandouts()`. `populateModuleSelect()` extracted
+    from Deploy Encounter (Stage 10) so both module pickers share one
+    implementation.
+
+### Changed
+- **Requires Geektastic Realms v1.22.0+** for Import Handouts'
+  `/api/foundry/v1/modules/{moduleId}/handouts` endpoint. Everything shipped
+  before this release still works unchanged against older GR versions.
+
 ## [1.2.1] - 2026-07-18
 
 ### Fixed
@@ -255,7 +284,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   response).
 - Verified against Foundry VTT v13. Not yet tested against v14.
 
-[Unreleased]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v1.2.1...HEAD
+[Unreleased]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v1.2.1...v1.3.0
 [1.2.1]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v1.0.0...v1.1.0

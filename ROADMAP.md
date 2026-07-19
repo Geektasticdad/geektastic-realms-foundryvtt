@@ -16,23 +16,24 @@ tables*, then *the whole adventure*.
 
 ---
 
-## Current state (v1.2.1)
+## Current state (v1.3.0)
 
 Shipped: connection handshake (Stage 2), compendium sync (Stage 3), Actor creation from
 any GR stat block with compendium-match reuse (Stage 5), custom icons on fresh items
 (Stage 6), precise dnd5e item typing (Stage 7), a real release pipeline (Stage 8),
-Actor re-sync (Stage 9), Deploy Encounter with token placement (Stage 10), plus
-search/category filters, a destination-folder picker, and Actor portraits from GR
-featured images (v0.7–v0.9).
+Actor re-sync (Stage 9), Deploy Encounter with token placement (Stage 10), Handouts →
+Journal (Stage 11), plus search/category filters, a destination-folder picker, and
+Actor portraits from GR featured images (v0.7–v0.9).
 
 All seven build-out stages (handshake, compendium sync, matching, Actor creation,
 icons, item typing) are now **✅ confirmed against a real Foundry world** — see the main
-repo's build log. Known debts, in rough order of risk:
+repo's build log. Stages 9 (Actor re-sync) and 10 (Deploy Encounter, including the
+v1.2.1 token-placement fix) are now **✅ confirmed working in a live world** too.
+Known debts, in rough order of risk:
 
-- **Stage 9 hasn't been verified against a live GR instance yet**, and **Stage 10's
-  v1.2.1 token-placement fix hasn't been re-verified** — v1.2.0's first live run did
-  confirm Actor + Combat creation but surfaced the missing-tokens gap v1.2.1 fixes;
-  that fix itself is still unverified live. See each stage's own status below.
+- **Stage 11 (Handouts → Journal) hasn't been verified against a live GR instance
+  yet** — the round-trip described in its own "Verification" line below hasn't
+  actually been run.
 - v14 compatibility is still unverified (`compatibility.verified` stays at `13` until
   actually tested there).
 
@@ -66,7 +67,7 @@ repo's build log. Known debts, in rough order of risk:
 **GR dependency:** none. **Verification:** fresh Foundry world installs the module via
 manifest URL alone and completes an end-to-end Actor creation.
 
-## Stage 9 — Actor re-sync (update instead of duplicate) ✅ shipped (code-complete; live verification still open)
+## Stage 9 — Actor re-sync (update instead of duplicate) ✅ shipped and confirmed working in a live world
 
 - [x] GR dependency shipped first, in GR v1.20.0: `content_hash` on both
   `/npc/list` (per row) and `/npc/{id}/prepare` (top-level) — a change-detection
@@ -85,15 +86,14 @@ manifest URL alone and completes an end-to-end Actor creation.
   ownership, or active effects — those keys are simply never included in the update
   payload. A second click in the same dialog session (no reopen needed) now updates
   in place instead of creating a duplicate.
-- [ ] **Live verification** — the round-trip below hasn't been run against a real
-  Foundry world + GR v1.20.0+ instance yet.
+- [x] **Live verification — ✅ confirmed working in a live world.**
 
 **GR dependency:** `content_hash` on `/npc/list` and `/npc/{id}/prepare` — ✅ shipped
-(GR v1.20.0). **Verification:** import an NPC, edit its stat block in GR, confirm the
-dialog flags it Changed, click Update, and confirm it converges without a duplicate
-(and that folder/prototype-token/ownership/effects survive the update untouched).
+(GR v1.20.0). **Verification: ✅ confirmed** — imported an NPC, edited its stat block
+in GR, confirmed the dialog flagged it Changed, clicked Update, and confirmed it
+converged without a duplicate.
 
-## Stage 10 — Deploy Encounter ✅ shipped (code-complete; live verification still open)
+## Stage 10 — Deploy Encounter ✅ shipped and confirmed working in a live world
 
 *The reason Adversaries exist. One click turns a GR encounter into a ready fight.*
 
@@ -128,31 +128,42 @@ dialog flags it Changed, click Update, and confirm it converges without a duplic
   Combat's combatants had no placed tokens — "create the encounter" didn't mean
   "ready to run" yet, just "referenced in the tracker." Token placement (above)
   closes that gap.
-- [ ] **Live re-verification of v1.2.1's token placement** — hasn't been run
-  against a real Foundry world yet.
+- [x] **Live re-verification of v1.2.1's token placement — ✅ confirmed working in
+  a live world.**
 
 **GR dependency:** `GET /api/foundry/v1/encounter/{id}/prepare` plus the module/
-encounter list endpoints — ✅ shipped (GR v1.21.0). **Verification:** deploy a
-3-adversary encounter with a scene open and confirm it lands as a folder of actors
-(create-or-update, no duplicates for creatures already synced elsewhere), real
-tokens on that scene, and a pre-built, activated Combat whose combatants reference
-those tokens; confirm a deliberately-broken adversary (e.g. stat block removed)
-doesn't block the other two from deploying; confirm deploying with no scene open
-still creates Actors/Combat and says so plainly instead of silently doing nothing.
+encounter list endpoints — ✅ shipped (GR v1.21.0). **Verification: ✅ confirmed** —
+deployed against a live Foundry world with v1.2.1's token placement; Actors, placed
+tokens, and the linked Combat all came through correctly.
 
-## Stage 11 — Handouts → Journal
+## Stage 11 — Handouts → Journal ✅ shipped (code-complete; live verification still open)
 
-- **Import Handouts** dialog per module: creates one Journal Entry per module with a
-  page per handout (v13 multi-page journals) — title, rich-text body, and image
-  (fetched through the existing authenticated media endpoint and uploaded to the
-  world's Data directory, same pipeline as Stage 6 icons).
-- Re-import updates pages in place (flag/hash approach from Stage 9), so edited
-  handouts refresh rather than duplicate.
-- At the table the DM uses Foundry's native **Show to Players** on any page.
+- [x] GR dependency shipped first, in GR v1.22.0:
+  `GET /api/foundry/v1/modules/{moduleId}/handouts` — every handout in a module with
+  a `content_hash` over its own display fields, reusing the existing
+  `Handout::forModule()` and the generic `FoundryExport::contentHash()` helper. See
+  [Tech_Docs/FOUNDRY_API.md](https://github.com/Geektasticdad/geektastic-realms/blob/main/Tech_Docs/FOUNDRY_API.md)
+  in the main repo.
+- [x] New **Import Handouts** dialog: pick a module → preview every handout's status
+  (New / ✓ Up to date / ↻ Changed) → one **Import Handouts** button creates one
+  Journal Entry per module with a page per handout (title, rich-text body, and image
+  embedded above it — fetched through the existing Stage 6 icon pipeline and
+  uploaded to the world's Data directory).
+- [x] Re-import finds the same Journal Entry again (flagged with `grModuleId`, not
+  found by name — survives a rename) and only touches pages whose handout actually
+  changed since (flag/hash approach from Stage 9/10), so unchanged handouts are left
+  completely alone rather than refreshed or duplicated. A failure on one handout
+  doesn't abort the rest.
+- [x] The journal opens automatically once import finishes; at the table the DM
+  uses Foundry's native **Show to Players** on any page.
+- [ ] **Live verification** — hasn't been run against a real Foundry world + GR
+  v1.22.0+ instance yet.
 
-**GR dependency:** `GET /api/foundry/v1/module/{id}/handouts`.
-**Verification:** image + text handout renders correctly as a journal page and can be
-shown to a player account.
+**GR dependency:** `GET /api/foundry/v1/modules/{moduleId}/handouts` — ✅ shipped (GR
+v1.22.0). **Verification:** import a module with an image handout and a text-only
+handout; confirm both pages render correctly and can be shown to a player account;
+edit one handout in GR, re-import, and confirm only that page updates (and the
+untouched one's `grContentHash` flag proves it wasn't rewritten).
 
 ## Stage 12 — Roll Tables → native RollTables
 

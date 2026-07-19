@@ -178,6 +178,11 @@ async function prepareEncounter(encounterId) {
   return apiFetch(`/api/foundry/v1/encounter/${encounterId}/prepare`);
 }
 
+/** Fetches every handout in one module, each with a content_hash (Stage 11). */
+async function fetchModuleHandouts(moduleId) {
+  return apiFetch(`/api/foundry/v1/modules/${moduleId}/handouts`);
+}
+
 /** MIME type -> file extension, for icons downloaded from GR's media library. */
 const ICON_MIME_EXT = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif' };
 
@@ -234,6 +239,80 @@ async function uploadIconToFoundry(mediaId, cache) {
     cache.set(mediaId, null);
     return null;
   }
+}
+
+/**
+ * Finds this module's Journal Entry (Stage 11), if it's been imported before —
+ * flagged with `grModuleId` rather than found by name, so renaming the module or
+ * the journal afterward doesn't break re-import lookup.
+ */
+function findModuleJournal(moduleId) {
+  return game.journal.find((j) => j.getFlag(MODULE_ID, 'grModuleId') === moduleId) || null;
+}
+
+/** One handout's page content: an uploaded image (if any) above the rich-text body. */
+function handoutPageContent(handout, imgPath) {
+  const imageHtml = imgPath ? `<p><img src="${imgPath}" style="max-width:400px;"></p>` : '';
+  return imageHtml + (handout.body_html || '');
+}
+
+/**
+ * Imports every handout in a module as pages of one Journal Entry (Stage 11) —
+ * created on first import, found and reused (by `grModuleId` flag) on later ones.
+ * Each page is flagged with `grHandoutId`/`grContentHash`; a page whose hash still
+ * matches the handout's current `content_hash` is left untouched (not
+ * re-uploaded/re-written), the same change-detection approach Stage 9/10 use for
+ * Actors and encounters. A failure on one handout doesn't abort the rest.
+ * @returns {Promise<{journal: JournalEntry, created: number, updated: number, unchanged: number, failed: {name: string, error: string}[]}>}
+ */
+async function importHandouts(moduleId, moduleTitle, handouts, onProgress) {
+  const iconCache = new Map();
+
+  let journal = findModuleJournal(moduleId);
+  if (!journal) {
+    onProgress?.('Creating journal…');
+    journal = await JournalEntry.create({ name: moduleTitle, flags: { [MODULE_ID]: { grModuleId: moduleId } } });
+  } else if (journal.name !== moduleTitle) {
+    await journal.update({ name: moduleTitle });
+  }
+
+  let created = 0;
+  let updated = 0;
+  let unchanged = 0;
+  const failed = [];
+
+  for (let i = 0; i < handouts.length; i++) {
+    const handout = handouts[i];
+    onProgress?.(`Importing "${handout.title}"… (${i + 1}/${handouts.length})`);
+    try {
+      const existingPage = journal.pages.find((p) => p.getFlag(MODULE_ID, 'grHandoutId') === handout.id);
+      if (existingPage && existingPage.getFlag(MODULE_ID, 'grContentHash') === handout.content_hash) {
+        unchanged++;
+        continue;
+      }
+
+      const imgPath = handout.media_id ? await uploadIconToFoundry(handout.media_id, iconCache) : null;
+      const content = handoutPageContent(handout, imgPath);
+      const flags = { [MODULE_ID]: { grHandoutId: handout.id, grContentHash: handout.content_hash } };
+
+      if (existingPage) {
+        await existingPage.update({ name: handout.title, text: { content, format: CONST.JOURNAL_ENTRY_PAGE_FORMATS.HTML }, flags });
+        updated++;
+      } else {
+        await journal.createEmbeddedDocuments('JournalEntryPage', [{
+          name: handout.title,
+          type: 'text',
+          text: { content, format: CONST.JOURNAL_ENTRY_PAGE_FORMATS.HTML },
+          flags,
+        }]);
+        created++;
+      }
+    } catch (err) {
+      failed.push({ name: handout.title, error: err.message });
+    }
+  }
+
+  return { journal, created, updated, unchanged, failed };
 }
 
 /** GR size word -> Foundry dnd5e size code. */
@@ -345,6 +424,34 @@ function equipmentItemData(item, imgPath) {
   if (foundryType === 'equipment') data.system.armor = { value: null, dex: null };
   if (imgPath) data.img = imgPath;
   return data;
+}
+
+/**
+ * Populates a module <select> from the connected GR world — shared by the Deploy
+ * Encounter (Stage 10) and Import Handouts (Stage 11) pickers, which both start with
+ * "pick a module" before showing anything module-specific.
+ * @returns {Promise<boolean>} true if at least one module was loaded
+ */
+async function populateModuleSelect(select, status, emptyMessage, readyMessage) {
+  const result = await fetchModuleList();
+  if (!result.ok) {
+    status.text(`✘ ${result.error}`).css('color', '#c62828');
+    return false;
+  }
+
+  const modules = result.body.modules || [];
+  select.empty();
+  if (modules.length === 0) {
+    select.append('<option value="">No modules in this world</option>');
+    status.text(emptyMessage);
+    return false;
+  }
+
+  select.append('<option value="">Choose a module…</option>');
+  modules.forEach((m) => select.append(`<option value="${m.id}">${escapeHtml(m.title)}</option>`));
+  select.prop('disabled', false);
+  status.text(readyMessage);
+  return true;
 }
 
 /**
@@ -935,27 +1042,12 @@ class ImportEncounterForm extends FormApplicationBase {
   }
 
   async _loadModules(html) {
-    const select = html.find('.grfc-module-select');
-    const status = html.find('#grfc-encounter-status');
-
-    const result = await fetchModuleList();
-    if (!result.ok) {
-      status.text(`✘ ${result.error}`).css('color', '#c62828');
-      return;
-    }
-
-    const modules = result.body.modules || [];
-    select.empty();
-    if (modules.length === 0) {
-      select.append('<option value="">No modules in this world</option>');
-      status.text('No adventure modules found in this Geektastic Realms world.');
-      return;
-    }
-
-    select.append('<option value="">Choose a module…</option>');
-    modules.forEach((m) => select.append(`<option value="${m.id}">${escapeHtml(m.title)}</option>`));
-    select.prop('disabled', false);
-    status.text('Choose a module to see its encounters.');
+    await populateModuleSelect(
+      html.find('.grfc-module-select'),
+      html.find('#grfc-encounter-status'),
+      'No adventure modules found in this Geektastic Realms world.',
+      'Choose a module to see its encounters.'
+    );
   }
 
   async _loadEncounters(html) {
@@ -1111,6 +1203,158 @@ class ImportEncounterForm extends FormApplicationBase {
   }
 }
 
+/**
+ * Imports every handout in a module as pages of one Journal Entry (Stage 11) — pick
+ * a module, preview which handouts are New / Up to date / Changed, and click
+ * **Import Handouts** once to bring the whole set current in a single action (unlike
+ * Deploy Encounter, this is one journal per module, not one action per item, so
+ * there's a single button rather than a per-row one).
+ */
+class ImportHandoutsForm extends FormApplicationBase {
+  static get defaultOptions() {
+    return foundry.utils.mergeObject(super.defaultOptions, {
+      id: 'grfc-import-handouts',
+      title: 'Geektastic Realms — Import Handouts',
+      width: 640,
+      height: 600,
+      closeOnSubmit: false,
+      resizable: true,
+    });
+  }
+
+  getData() {
+    return {};
+  }
+
+  async _renderInner() {
+    const html = `
+      <form class="grfc-import-handouts" style="padding:.5rem;display:flex;flex-direction:column;height:100%;box-sizing:border-box;">
+        <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.5rem;">
+          <label style="white-space:nowrap;color:var(--color-text-dark-secondary,#666);font-size:.85em;">Module:</label>
+          <select class="grfc-module-select" style="flex:1 1 auto;min-width:0;" disabled>
+            <option value="">Loading modules…</option>
+          </select>
+        </div>
+        <p id="grfc-handouts-status" style="color:var(--color-text-dark-secondary,#666);margin:.25rem 0 .5rem;">Loading modules…</p>
+        <ul class="grfc-handouts-list" style="list-style:none;margin:0;padding:0;flex:1 1 auto;overflow-y:auto"></ul>
+        <button type="button" class="grfc-import-handouts-btn" style="margin-top:.5rem;" disabled>Import Handouts</button>
+      </form>
+    `;
+    return $(html);
+  }
+
+  activateListeners(html) {
+    super.activateListeners(html);
+    this._loadModules(html);
+    html.find('.grfc-module-select').on('change', () => this._loadHandouts(html));
+    html.find('.grfc-import-handouts-btn').on('click', () => this._doImport(html));
+  }
+
+  async _loadModules(html) {
+    await populateModuleSelect(
+      html.find('.grfc-module-select'),
+      html.find('#grfc-handouts-status'),
+      'No adventure modules found in this Geektastic Realms world.',
+      'Choose a module to see its handouts.'
+    );
+  }
+
+  async _loadHandouts(html) {
+    const select = html.find('.grfc-module-select');
+    const moduleId = select.val();
+    const list = html.find('.grfc-handouts-list');
+    const status = html.find('#grfc-handouts-status');
+    const importBtn = html.find('.grfc-import-handouts-btn');
+    list.empty();
+    importBtn.prop('disabled', true);
+
+    if (!moduleId) {
+      status.text('Choose a module to see its handouts.');
+      return;
+    }
+
+    status.text('Loading handouts…');
+    const result = await fetchModuleHandouts(moduleId);
+    if (!result.ok) {
+      status.text(`✘ ${result.error}`).css('color', '#c62828');
+      return;
+    }
+
+    const handouts = result.body.handouts || [];
+    if (handouts.length === 0) {
+      status.text('No handouts in this module.');
+      return;
+    }
+    status.text(`${handouts.length} handout${handouts.length === 1 ? '' : 's'} in this module.`);
+
+    const journal = findModuleJournal(moduleId);
+    handouts.forEach((handout) => {
+      const existingPage = journal?.pages.find((p) => p.getFlag(MODULE_ID, 'grHandoutId') === handout.id) ?? null;
+      const isChanged = !!existingPage && existingPage.getFlag(MODULE_ID, 'grContentHash') !== handout.content_hash;
+      const statusLabel = !existingPage ? 'New' : isChanged ? '↻ Changed' : '✓ Up to date';
+      const statusColor = !existingPage ? 'var(--color-text-dark-secondary,#666)' : isChanged ? '#b26a00' : '#2e7d32';
+
+      const li = $(`
+        <li style="display:flex;align-items:center;gap:.5rem;padding:.35rem 0;border-bottom:1px solid #7773;">
+          <span style="flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+            <strong>${escapeHtml(handout.title)}</strong>
+            <span style="color:var(--color-text-dark-secondary,#666);font-size:.85em;">${handout.section_title ? ' — ' + escapeHtml(handout.section_title) : ''}</span>
+          </span>
+          <span style="flex:0 0 auto;font-size:.8em;color:${statusColor};white-space:nowrap;">${statusLabel}</span>
+        </li>
+      `);
+      list.append(li);
+    });
+
+    importBtn.prop('disabled', false);
+  }
+
+  async _doImport(html) {
+    const select = html.find('.grfc-module-select');
+    const moduleId = select.val();
+    const moduleTitle = select.find('option:selected').text();
+    const status = html.find('#grfc-handouts-status');
+    const importBtn = html.find('.grfc-import-handouts-btn');
+    if (!moduleId) return;
+
+    importBtn.prop('disabled', true);
+    status.css('color', '');
+
+    const result = await fetchModuleHandouts(moduleId);
+    if (!result.ok) {
+      status.text(`✘ ${result.error}`).css('color', '#c62828');
+      importBtn.prop('disabled', false);
+      return;
+    }
+
+    const handouts = result.body.handouts || [];
+    const { journal, created, updated, unchanged, failed } = await importHandouts(
+      moduleId,
+      moduleTitle,
+      handouts,
+      (msg) => status.text(msg)
+    );
+
+    const parts = [];
+    if (created) parts.push(`${created} created`);
+    if (updated) parts.push(`${updated} updated`);
+    if (unchanged) parts.push(`${unchanged} already up to date`);
+    const summary = parts.length ? parts.join(', ') : 'nothing to import';
+
+    if (failed.length === 0) {
+      status.text(`✔ Done — ${summary}.`).css('color', '#2e7d32');
+      ui.notifications.info(`Geektastic Realms Foundry Connect: imported handouts for "${moduleTitle}" (${summary}).`);
+    } else {
+      status.text(`⚠ ${summary}, ${failed.length} failed`).attr('title', failed.map((f) => `${f.name}: ${f.error}`).join('\n')).css('color', '#b26a00');
+      ui.notifications.warn(`Geektastic Realms Foundry Connect: imported handouts for "${moduleTitle}" (${summary}) with ${failed.length} failure(s).`);
+    }
+
+    journal?.sheet?.render(true);
+    importBtn.prop('disabled', false);
+    await this._loadHandouts(html);
+  }
+}
+
 Hooks.once('init', () => {
   game.settings.register(MODULE_ID, 'serverUrl', {
     name: 'Geektastic Realms Server URL',
@@ -1174,6 +1418,15 @@ Hooks.once('init', () => {
     hint: 'Pick a module and one of its encounters, and create/update every adversary\'s Actor in this world in one action — optionally with a pre-built Combat.',
     icon: 'fas fa-people-group',
     type: ImportEncounterForm,
+    restricted: true,
+  });
+
+  game.settings.registerMenu(MODULE_ID, 'importHandoutsMenu', {
+    name: 'Import Handouts',
+    label: 'Import Handouts',
+    hint: 'Pick a module and import every one of its handouts as pages of a Journal Entry, ready to Show to Players at the table.',
+    icon: 'fas fa-book-open',
+    type: ImportHandoutsForm,
     restricted: true,
   });
 });

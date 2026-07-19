@@ -17,7 +17,7 @@ for the shipped Stages 1–7, and
 [FOUNDRY_API.md](https://github.com/Geektasticdad/geektastic-realms/blob/main/Tech_Docs/FOUNDRY_API.md)
 for the API contract this module talks to.
 
-## Current stage: Stage 10 — Deploy Encounter
+## Current stage: Stage 11 — Handouts → Journal
 
 This version registers your Geektastic Realms server URL and API token (Stage 2), syncs
 your world's Item-type compendiums so Geektastic Realms can match stat block features/
@@ -29,9 +29,11 @@ Geektastic Realms side, gives unmatched equipment items an accurate Foundry
 type/subtype and magic-item flag (Stage 7) instead of a generic placeholder, has a real
 release pipeline (Stage 8) — see [RELEASING.md](RELEASING.md), updates a
 previously-created Actor in place when you re-import it instead of duplicating it
-(Stage 9) — see [Re-syncing an Actor](#re-syncing-an-actor), and (Stage 10) can now
-**deploy a whole encounter's adversary roster in one action** — see
-[Deploying an Encounter](#deploying-an-encounter) below.
+(Stage 9) — see [Re-syncing an Actor](#re-syncing-an-actor), can deploy a whole
+encounter's adversary roster in one action (Stage 10) — see
+[Deploying an Encounter](#deploying-an-encounter), and (Stage 11) can now **import a
+whole module's handouts as one Journal Entry**, ready to Show to Players — see
+[Importing Handouts](#importing-handouts) below.
 
 ## Requirements
 
@@ -41,7 +43,8 @@ previously-created Actor in place when you re-import it instead of duplicating i
   permission on that world). **v1.20.0+** is needed for Actor re-sync status (New /
   Up to date / Changed) — older versions still work, but every entry with a matching
   Actor will show as "Changed" rather than "Up to date". **v1.21.0+** is needed for
-  Deploy Encounter's module/encounter pickers.
+  Deploy Encounter's module/encounter pickers. **v1.22.0+** is needed for Import
+  Handouts.
 
 ## Installation
 
@@ -169,6 +172,24 @@ manual linking needed. If token placement was skipped (box unchecked, or no scen
 open), the Combat still gets an actor-only combatant per quantity instead — you'll
 need to link those to tokens yourself later, the same as adding any non-token
 combatant by hand.
+
+## Importing Handouts
+
+In Module Settings, click **Import Handouts**. Pick a **Module** from the dropdown,
+and every handout in it appears below with a status — **New**, **✓ Up to date**, or
+**↻ Changed** — so you can see what's about to happen before clicking anything.
+
+Click **Import Handouts** and every handout in that module becomes a page in one
+Journal Entry named after the module — image (if it has one) above the rich-text
+body, one page per handout. Re-running this later finds that same Journal Entry
+again (even if you've renamed it) and only touches pages whose handout actually
+changed since — an unchanged handout's page is left completely alone, not
+re-uploaded or rewritten. A failure on one handout doesn't stop the rest; you'll see
+how many were created, updated, or already current, and if any failed, which ones
+and why.
+
+The journal opens automatically when the import finishes. From there, use Foundry's
+native **Show to Players** on any page at the table — that's the whole point.
 
 ## Development notes
 
