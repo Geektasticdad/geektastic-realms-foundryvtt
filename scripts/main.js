@@ -383,6 +383,54 @@ async function findOrCreateEncounterFolder(encounterName) {
 }
 
 /**
+ * Places `count` copies of an actor's token on the currently viewed scene, arranged
+ * in a simple wrapping grid so an encounter actually lands ready to run instead of
+ * needing every token dragged on by hand afterward. `slotOffset`/`totalInEncounter`
+ * let the caller place several different creatures into one shared, non-overlapping
+ * layout (see the deploy loop below) rather than each creature's copies starting
+ * over at the same spot.
+ *
+ * Returns `[]` (placing nothing) if there's no active scene — Deploy Encounter still
+ * creates the Actors and, if requested, an actor-only Combat in that case; there's
+ * just no canvas to put tokens on.
+ *
+ * @param {Actor} actor
+ * @param {number} count
+ * @param {number} slotOffset - how many tokens have already been placed for this encounter so far
+ * @param {number} totalInEncounter - grand total tokens being placed across every adversary, for grid sizing
+ * @returns {Promise<TokenDocument[]>}
+ */
+async function placeTokensForActor(actor, count, slotOffset, totalInEncounter) {
+  if (!canvas?.ready || !canvas.scene) return [];
+
+  const gridSize = canvas.scene.grid.size;
+  const spacing = gridSize * 1.5;
+  const perRow = Math.max(1, Math.ceil(Math.sqrt(totalInEncounter)));
+  const rows = Math.ceil(totalInEncounter / perRow);
+  // Center the whole grid on wherever the DM is currently looking, falling back to
+  // the scene's own center if the canvas hasn't reported a pivot yet.
+  const center = canvas.stage?.pivot ?? { x: canvas.scene.width / 2, y: canvas.scene.height / 2 };
+  const originX = center.x - ((perRow - 1) * spacing) / 2;
+  const originY = center.y - ((rows - 1) * spacing) / 2;
+
+  const tokenData = [];
+  for (let i = 0; i < count; i++) {
+    const slot = slotOffset + i;
+    const col = slot % perRow;
+    const row = Math.floor(slot / perRow);
+    const tokenDoc = await actor.getTokenDocument({
+      x: originX + col * spacing,
+      y: originY + row * spacing,
+    });
+    const data = tokenDoc.toObject();
+    delete data._id;
+    tokenData.push(data);
+  }
+  if (tokenData.length === 0) return [];
+  return canvas.scene.createEmbeddedDocuments('Token', tokenData);
+}
+
+/**
  * Builds a real Actor in this world from a GR "prepare" payload (Stage 5), resolving
  * confirmed compendium matches and creating fresh Items for everything else — or, if
  * `existingActor` is given (Stage 9), updates that Actor in place instead of creating
@@ -865,9 +913,13 @@ class ImportEncounterForm extends FormApplicationBase {
             <option value="">Loading modules…</option>
           </select>
         </div>
+        <label style="display:flex;align-items:center;gap:.4rem;margin-bottom:.3rem;font-size:.9em;">
+          <input type="checkbox" class="grfc-place-tokens" checked>
+          Place tokens on the current scene (one per creature)
+        </label>
         <label style="display:flex;align-items:center;gap:.4rem;margin-bottom:.5rem;font-size:.9em;">
           <input type="checkbox" class="grfc-create-combat" checked>
-          Also create a Combat encounter (one combatant per creature)
+          Also create a Combat encounter, linked to the placed tokens
         </label>
         <p id="grfc-encounter-status" style="color:var(--color-text-dark-secondary,#666);margin:.25rem 0 .5rem;">Loading modules…</p>
         <ul class="grfc-encounter-list" style="list-style:none;margin:0;padding:0;flex:1 1 auto;overflow-y:auto"></ul>
@@ -969,6 +1021,7 @@ class ImportEncounterForm extends FormApplicationBase {
           return;
         }
 
+        const placeTokens = html.find('.grfc-place-tokens').is(':checked');
         const createCombat = html.find('.grfc-create-combat').is(':checked');
         const preparedAdversaries = prepared.body.adversaries || [];
         const folderId = await findOrCreateEncounterFolder(prepared.body.encounter?.name || encounter.name);
@@ -995,13 +1048,43 @@ class ImportEncounterForm extends FormApplicationBase {
           }
         }
 
+        // Placed tokens, keyed by actor id — used both to report "no active scene"
+        // and to link the Combat below to real tokens instead of bare actor refs.
+        const tokensByActorId = new Map();
+        let noActiveScene = false;
+        if (placeTokens && deployed.length > 0) {
+          rowStatus.text('Placing tokens…');
+          const grandTotal = deployed.reduce((sum, d) => sum + d.quantity, 0);
+          let slot = 0;
+          for (const { actor, quantity } of deployed) {
+            try {
+              const tokens = await placeTokensForActor(actor, quantity, slot, grandTotal);
+              if (tokens.length === 0) noActiveScene = true;
+              tokensByActorId.set(actor.id, tokens);
+            } catch (err) {
+              failed.push({ name: `${actor.name} (token placement)`, error: err.message });
+            }
+            slot += quantity;
+          }
+        }
+
         if (createCombat && deployed.length > 0) {
           rowStatus.text('Building combat…');
           try {
-            const combat = await Combat.create({});
+            const combat = await Combat.create({ scene: canvas?.scene?.id ?? null });
             const combatants = [];
             for (const { actor, quantity } of deployed) {
-              for (let n = 0; n < quantity; n++) combatants.push({ actorId: actor.id });
+              const tokens = tokensByActorId.get(actor.id) || [];
+              if (tokens.length > 0) {
+                // Linked to a real placed token — appears on the map and in the
+                // tracker together, ready to run immediately.
+                for (const token of tokens) combatants.push({ tokenId: token.id, sceneId: token.parent.id, actorId: actor.id });
+              } else {
+                // No token placed (box unchecked, or no active scene) — still add
+                // an actor-only combatant so the roster is at least in the tracker;
+                // the DM links it to a token manually later.
+                for (let n = 0; n < quantity; n++) combatants.push({ actorId: actor.id });
+              }
             }
             if (combatants.length) await combat.createEmbeddedDocuments('Combatant', combatants);
             await combat.activate();
@@ -1011,14 +1094,15 @@ class ImportEncounterForm extends FormApplicationBase {
         }
 
         btn.prop('disabled', false);
+        const parts = [`${deployed.length} adversar${deployed.length === 1 ? 'y' : 'ies'}`];
+        if (placeTokens) parts.push(noActiveScene ? 'no active scene to place tokens on' : 'tokens placed');
+        if (createCombat) parts.push('combat created');
         if (failed.length === 0) {
           rowStatus.text('✔ Deployed').css('color', '#2e7d32');
-          ui.notifications.info(
-            `Geektastic Realms Foundry Connect: deployed "${encounter.name}" (${deployed.length} adversar${deployed.length === 1 ? 'y' : 'ies'}${createCombat ? ', combat created' : ''}).`
-          );
+          ui.notifications.info(`Geektastic Realms Foundry Connect: deployed "${encounter.name}" (${parts.join(', ')}).`);
         } else {
           rowStatus.text(`⚠ ${failed.length} failed`).attr('title', failed.map((f) => `${f.name}: ${f.error}`).join('\n')).css('color', '#b26a00');
-          ui.notifications.warn(`Geektastic Realms Foundry Connect: deployed "${encounter.name}" with ${failed.length} failure(s) — see row for details.`);
+          ui.notifications.warn(`Geektastic Realms Foundry Connect: deployed "${encounter.name}" (${parts.join(', ')}) with ${failed.length} failure(s) — see row for details.`);
         }
       });
 

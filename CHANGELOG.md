@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.2.1] - 2026-07-18
+
+### Fixed
+- **Deploy Encounter now actually places tokens.** v1.2.0 shipped Deploy Encounter
+  creating an "unlinked" Combat (actor-only combatants, no placed tokens) with a note
+  that the DM would drag tokens on and link them up manually — in practice that left
+  an encounter uncreated on the actual battle map, not ready to run. Deploy Encounter
+  now places a real token per creature on the currently viewed scene (arranged in a
+  simple wrapping grid centered on wherever the DM is looking), and the Combat's
+  combatants are linked to those tokens directly, so the tracker and the map agree
+  from the moment you click Deploy.
+  - New **"Place tokens on the current scene"** checkbox (checked by default,
+    alongside the existing Combat checkbox).
+  - If there's no active scene open, Deploy Encounter still creates the Actors and
+    (if requested) an actor-only Combat exactly as before — it just can't place
+    tokens without a canvas to put them on, and says so in the result notification.
+  - New `placeTokensForActor()` helper, using `Actor#getTokenDocument()` +
+    `Scene#createEmbeddedDocuments('Token', ...)`.
+
 ## [1.2.0] - 2026-07-18
 
 ### Added
@@ -236,7 +255,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   response).
 - Verified against Foundry VTT v13. Not yet tested against v14.
 
-[Unreleased]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v1.2.1...HEAD
+[1.2.1]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v0.9.0...v1.0.0

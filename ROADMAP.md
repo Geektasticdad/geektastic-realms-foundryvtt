@@ -16,21 +16,23 @@ tables*, then *the whole adventure*.
 
 ---
 
-## Current state (v1.2.0)
+## Current state (v1.2.1)
 
 Shipped: connection handshake (Stage 2), compendium sync (Stage 3), Actor creation from
 any GR stat block with compendium-match reuse (Stage 5), custom icons on fresh items
 (Stage 6), precise dnd5e item typing (Stage 7), a real release pipeline (Stage 8),
-Actor re-sync (Stage 9), Deploy Encounter (Stage 10), plus search/category filters, a
-destination-folder picker, and Actor portraits from GR featured images (v0.7–v0.9).
+Actor re-sync (Stage 9), Deploy Encounter with token placement (Stage 10), plus
+search/category filters, a destination-folder picker, and Actor portraits from GR
+featured images (v0.7–v0.9).
 
 All seven build-out stages (handshake, compendium sync, matching, Actor creation,
 icons, item typing) are now **✅ confirmed against a real Foundry world** — see the main
 repo's build log. Known debts, in rough order of risk:
 
-- **Stages 9 and 10 haven't been verified against a live GR instance yet** — the code
-  for both is written and reviewed, but neither's "Verification" round-trip (below)
-  has actually been run against a real Foundry world + GR deployment.
+- **Stage 9 hasn't been verified against a live GR instance yet**, and **Stage 10's
+  v1.2.1 token-placement fix hasn't been re-verified** — v1.2.0's first live run did
+  confirm Actor + Combat creation but surfaced the missing-tokens gap v1.2.1 fixes;
+  that fix itself is still unverified live. See each stage's own status below.
 - v14 compatibility is still unverified (`compatibility.verified` stays at `13` until
   actually tested there).
 
@@ -109,22 +111,34 @@ dialog flags it Changed, click Update, and confirm it converges without a duplic
   (`syncedActorsByEntryId()` extracted to a shared helper so both pickers agree on
   New/Up to date/Changed), filed in an `Encounters/{name}` folder (created on
   demand, reused rather than duplicated on re-deploy).
+- [x] Optional **token placement** (checked by default) — one token per creature,
+  placed on whichever scene is currently open, arranged in a simple grid centered
+  on the DM's current view. Skipped (with a note in the result) if no scene is
+  open; the Actors are still created either way.
 - [x] Optional **Combat** creation (checked by default) — one combatant per
   quantity (6 hobgoblins = 6 combatant entries referencing the one hobgoblin
-  Actor), unlinked to a placed token until the DM drags one onto the scene; the
-  combat is activated so the tracker shows it immediately.
+  Actor), linked to the placed tokens above so the tracker and the map agree
+  immediately; falls back to actor-only combatants if token placement was
+  skipped. The combat is activated so the tracker shows it immediately.
 - [x] Per-step progress like the existing Create Actor flow; a failure on one
   adversary doesn't abort the rest — the dialog reports how many deployed and,
   if any failed, which ones and why.
-- [ ] **Live verification** — the round-trip below hasn't been run against a real
-  Foundry world + GR v1.21.0+ instance yet.
+- [x] **First live test surfaced a real gap, now fixed (v1.2.1):** v1.2.0's first
+  real run confirmed Actor creation and Combat creation both worked, but the
+  Combat's combatants had no placed tokens — "create the encounter" didn't mean
+  "ready to run" yet, just "referenced in the tracker." Token placement (above)
+  closes that gap.
+- [ ] **Live re-verification of v1.2.1's token placement** — hasn't been run
+  against a real Foundry world yet.
 
 **GR dependency:** `GET /api/foundry/v1/encounter/{id}/prepare` plus the module/
 encounter list endpoints — ✅ shipped (GR v1.21.0). **Verification:** deploy a
-3-adversary encounter and confirm it lands as a folder of actors (create-or-update,
-no duplicates for creatures already synced elsewhere) and a pre-built, activated
-Combat in the tracker; confirm a deliberately-broken adversary (e.g. stat block
-removed) doesn't block the other two from deploying.
+3-adversary encounter with a scene open and confirm it lands as a folder of actors
+(create-or-update, no duplicates for creatures already synced elsewhere), real
+tokens on that scene, and a pre-built, activated Combat whose combatants reference
+those tokens; confirm a deliberately-broken adversary (e.g. stat block removed)
+doesn't block the other two from deploying; confirm deploying with no scene open
+still creates Actors/Combat and says so plainly instead of silently doing nothing.
 
 ## Stage 11 — Handouts → Journal
 

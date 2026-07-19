@@ -146,6 +146,9 @@ and every encounter in it appears below — name, type, difficulty, which sectio
 in, and its full adversary roster (e.g. "3× Goblin, 1× Goblin Boss") right in the list,
 so you can see what you're about to deploy before committing to anything.
 
+Before clicking Deploy, make sure the scene you actually want to run the fight on is
+the one currently open — that's where tokens get placed.
+
 Click **Deploy** next to the one you want. Every adversary's Actor is created (or
 updated in place, per [Re-syncing an Actor](#re-syncing-an-actor) above, if it already
 exists somewhere in this world) into an `Encounters/{encounter name}` folder — created
@@ -153,13 +156,19 @@ on demand, and reused rather than duplicated if you deploy the same encounter ag
 later. A failure on one creature doesn't stop the rest; you'll see how many succeeded
 and, if any failed, which ones and why.
 
-Leave **"Also create a Combat encounter"** checked (the default) and a Combat is
-built alongside the Actors, with one combatant per quantity — 6 hobgoblins in the
-roster means 6 combatant entries in the tracker, all referencing the one hobgoblin
-Actor. These combatants aren't tied to placed tokens yet; drag tokens onto your scene
-afterward and Foundry's tracker links them up, the same as adding any non-token
-combatant by hand. Uncheck the box if you'd rather just get the Actors and build the
-combat yourself.
+Leave **"Place tokens on the current scene"** checked (the default) and one token per
+creature is dropped onto whichever scene you currently have open, arranged in a
+simple grid centered on wherever you're looking — 6 hobgoblins in the roster means 6
+tokens on the map. If no scene is open, this is skipped and the result tells you so;
+the Actors are still created either way.
+
+Leave **"Also create a Combat encounter"** checked (the default) too, and a Combat is
+built alongside them, with one combatant per placed token — linked to the real token
+on the map, so the tracker and the scene agree from the moment you click Deploy, no
+manual linking needed. If token placement was skipped (box unchecked, or no scene
+open), the Combat still gets an actor-only combatant per quantity instead — you'll
+need to link those to tokens yourself later, the same as adding any non-token
+combatant by hand.
 
 ## Development notes
 
