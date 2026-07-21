@@ -188,6 +188,11 @@ async function fetchModuleRollTables(moduleId) {
   return apiFetch(`/api/foundry/v1/modules/${moduleId}/roll-tables`);
 }
 
+/** Fetches a module's overview + full section tree (real body_html, content_hash per section) for Stage 13. */
+async function fetchModulePrepare(moduleId) {
+  return apiFetch(`/api/foundry/v1/modules/${moduleId}/prepare`);
+}
+
 /** MIME type -> file extension, for icons downloaded from GR's media library. */
 const ICON_MIME_EXT = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif' };
 
@@ -386,6 +391,226 @@ async function importRollTable(table, existing, onProgress) {
   }
   if (resultsData.length) await doc.createEmbeddedDocuments('TableResult', resultsData);
   return doc;
+}
+
+/** Section type -> JournalEntryPage heading level, matching the GR web run view's own convention. */
+const SECTION_HEADING_LEVEL = { act: 1, chapter: 2, scene: 3, appendix: 2 };
+
+/**
+ * Flattens a GR section tree (Acts -> Chapters -> Scenes, Appendices as top-level
+ * siblings) into a depth-first ordered list. Foundry's Journal page model has no
+ * real page-within-page nesting, so "nested pages in tree order" (Stage 13) means
+ * this: one page per section, in the same order a DM reading the run view
+ * top-to-bottom would encounter them.
+ */
+function flattenSectionTree(nodes) {
+  const out = [];
+  const walk = (list) => {
+    for (const node of list) {
+      out.push(node);
+      walk(node.children || []);
+    }
+  };
+  walk(nodes || []);
+  return out;
+}
+
+/**
+ * Rewrites encounter-ref/handout-ref/roll-table-ref chips already embedded in a
+ * section's body_html into links to whatever Stage 10–12 documents already exist
+ * for them, using the same eid-/hid-/rtid- class-token trick the web run view's own
+ * expand_*_refs() helpers key off (see app/Support/helpers.php in the main repo). A
+ * ref with no matching document yet — that stage hasn't been run for this specific
+ * item — falls back to a plain, undecorated label instead of a broken link.
+ */
+function rewriteAdventureRefs(html, ctx) {
+  if (!html) return html;
+
+  html = html.replace(/<div\b[^>]*\bclass="[^"]*\beid-(\d+)\b[^"]*"[^>]*>[\s\S]*?<\/div>/gi, (match, idStr) => {
+    const enc = ctx.encountersById.get(Number(idStr));
+    if (!enc) return match;
+    const typeLabel = enc.encounter_type ? enc.encounter_type.charAt(0).toUpperCase() + enc.encounter_type.slice(1) : '';
+    const roster = (enc.adversaries || [])
+      .map((a) => {
+        const actor = ctx.actorsByEntryId.get(a.entry_id);
+        const label = actor ? `@UUID[${actor.uuid}]{${escapeHtml(a.name)}}` : escapeHtml(a.name);
+        return `${a.quantity}× ${label}`;
+      })
+      .join(', ');
+    const diffText = enc.difficulty ? ` — ${escapeHtml(enc.difficulty)}` : '';
+    const rosterLine = roster ? `<br>Adversaries: ${roster}` : '';
+    return `<p>⚔ <strong>${escapeHtml(enc.name)}</strong> (${escapeHtml(typeLabel)}${diffText})${rosterLine}</p>`;
+  });
+
+  html = html.replace(/<div\b[^>]*\bclass="[^"]*\bhid-(\d+)\b[^"]*"[^>]*>[\s\S]*?<\/div>/gi, (match, idStr) => {
+    const id = Number(idStr);
+    const page = ctx.handoutPagesByGrId.get(id);
+    const title = ctx.handoutsById.get(id)?.title ?? 'Handout';
+    const label = page ? `@UUID[${page.uuid}]{${escapeHtml(title)}}` : escapeHtml(title);
+    return `<p>📄 ${label}</p>`;
+  });
+
+  html = html.replace(/<div\b[^>]*\bclass="[^"]*\brtid-(\d+)\b[^"]*"[^>]*>[\s\S]*?<\/div>/gi, (match, idStr) => {
+    const id = Number(idStr);
+    const table = ctx.rollTablesByGrId.get(id);
+    const title = ctx.rollTableTitlesById.get(id) ?? 'Roll Table';
+    const label = table ? `@UUID[${table.uuid}]{${escapeHtml(title)}}` : escapeHtml(title);
+    return `<p>🎲 ${label}</p>`;
+  });
+
+  return html;
+}
+
+/**
+ * A section's (or the module's) Related Articles as a footer list, linked to a
+ * matching Actor (Stage 9) where one already exists — the "entry mentions linked
+ * where a matching Actor exists" GR's own inline @-mention links aren't reliably
+ * parseable for (see Tech_Docs/FOUNDRY_API.md "Adventure → Journal export" in the
+ * main repo for why this uses the structured Related Articles data instead).
+ */
+function relatedEntriesFooter(relatedEntries, actorsByEntryId) {
+  if (!relatedEntries || relatedEntries.length === 0) return '';
+  const items = relatedEntries
+    .map((r) => {
+      const actor = actorsByEntryId.get(r.entry_id);
+      const label = actor ? `@UUID[${actor.uuid}]{${escapeHtml(r.title)}}` : escapeHtml(r.title);
+      const note = r.context_note ? ` — ${escapeHtml(r.context_note)}` : '';
+      return `<li>${label}${note}</li>`;
+    })
+    .join('');
+  return `<hr><p><strong>Related</strong></p><ul>${items}</ul>`;
+}
+
+/**
+ * Creates or updates one JournalEntryPage, keyed by `flagKey`/`flagValue` (e.g.
+ * `grSectionId`/{id}, or `grPageKind`/`'overview'` for the module overview page)
+ * rather than by name, so renaming a section or the page itself doesn't break
+ * re-import lookup. Always keeps `sort` current — even when content is otherwise
+ * unchanged — so the page list stays in tree order even if sections were added,
+ * removed, or reordered since the last import; only rebuilds
+ * `name`/`title.level`/`text` when `contentHash` actually changed.
+ * @returns {Promise<{changed: boolean, isNew: boolean}>}
+ */
+async function importAdventurePage(journal, flagKey, flagValue, { name, level, content, contentHash, sortOrder }) {
+  const existingPage = journal.pages.find((p) => p.getFlag(MODULE_ID, flagKey) === flagValue);
+  const isNew = !existingPage;
+  const upToDate = !isNew && existingPage.getFlag(MODULE_ID, 'grContentHash') === contentHash;
+
+  if (!isNew) {
+    if (upToDate) {
+      if (existingPage.sort !== sortOrder) await existingPage.update({ sort: sortOrder });
+      return { changed: false, isNew: false };
+    }
+    await existingPage.update({
+      name,
+      title: { level },
+      text: { content, format: CONST.JOURNAL_ENTRY_PAGE_FORMATS.HTML },
+      sort: sortOrder,
+      flags: { [MODULE_ID]: { [flagKey]: flagValue, grContentHash: contentHash } },
+    });
+    return { changed: true, isNew: false };
+  }
+
+  await journal.createEmbeddedDocuments('JournalEntryPage', [{
+    name,
+    type: 'text',
+    title: { level },
+    text: { content, format: CONST.JOURNAL_ENTRY_PAGE_FORMATS.HTML },
+    sort: sortOrder,
+    flags: { [MODULE_ID]: { [flagKey]: flagValue, grContentHash: contentHash } },
+  }]);
+  return { changed: true, isNew: true };
+}
+
+/**
+ * Imports a whole module as one Journal Entry (Stage 13, the capstone composing
+ * Stages 9–12): an overview page, then one page per section in depth-first tree
+ * order, each with its encounter-ref/handout-ref/roll-table-ref chips rewritten
+ * into links to whatever Stage 10–12 documents already exist, and its Related
+ * Articles appended as a linked-where-possible footer. Reuses the same per-module
+ * Journal Entry Stage 11 already creates (via findModuleJournal()) — a module's
+ * handouts and its narrative end up in one place, not two competing journals.
+ * Deliberately does not create any Actors/RollTables/handout pages itself — those
+ * are Stages 9–12's job; this stage only links to what already exists.
+ * @returns {Promise<{journal: JournalEntry, created: number, updated: number, unchanged: number}>}
+ */
+async function importAdventure(moduleId, onProgress) {
+  onProgress?.('Fetching adventure…');
+  const [prepared, encountersResult, handoutsResult, rollTablesResult] = await Promise.all([
+    fetchModulePrepare(moduleId),
+    fetchModuleEncounters(moduleId),
+    fetchModuleHandouts(moduleId),
+    fetchModuleRollTables(moduleId),
+  ]);
+  if (!prepared.ok) throw new Error(prepared.error);
+
+  const encountersById = new Map((encountersResult.body?.encounters || []).map((e) => [e.id, e]));
+  const handoutsById = new Map((handoutsResult.body?.handouts || []).map((h) => [h.id, h]));
+  const rollTables = rollTablesResult.body?.roll_tables || [];
+  const rollTableTitlesById = new Map(rollTables.map((t) => [t.id, t.title]));
+
+  let journal = findModuleJournal(moduleId);
+  if (!journal) {
+    onProgress?.('Creating journal…');
+    journal = await JournalEntry.create({
+      name: prepared.body.module.title,
+      flags: { [MODULE_ID]: { grModuleId: moduleId } },
+    });
+  } else if (journal.name !== prepared.body.module.title) {
+    await journal.update({ name: prepared.body.module.title });
+  }
+
+  const handoutPagesByGrId = new Map();
+  for (const page of journal.pages) {
+    const hid = page.getFlag(MODULE_ID, 'grHandoutId');
+    if (hid != null) handoutPagesByGrId.set(hid, page);
+  }
+
+  const ctx = {
+    encountersById,
+    handoutsById,
+    handoutPagesByGrId,
+    rollTablesByGrId: syncedRollTablesByGrId(),
+    rollTableTitlesById,
+    actorsByEntryId: syncedActorsByEntryId(),
+  };
+
+  let created = 0;
+  let updated = 0;
+  let unchanged = 0;
+  const tally = (result) => {
+    if (!result.changed) unchanged++;
+    else if (result.isNew) created++;
+    else updated++;
+  };
+
+  onProgress?.('Importing overview…');
+  const overviewContent = rewriteAdventureRefs(prepared.body.module.overview || '', ctx)
+    + relatedEntriesFooter(prepared.body.module_related_entries, ctx.actorsByEntryId);
+  tally(await importAdventurePage(journal, 'grPageKind', 'overview', {
+    name: prepared.body.module.title,
+    level: 1,
+    content: overviewContent,
+    contentHash: prepared.body.module.content_hash,
+    sortOrder: 0,
+  }));
+
+  const flatSections = flattenSectionTree(prepared.body.sections);
+  for (let i = 0; i < flatSections.length; i++) {
+    const section = flatSections[i];
+    onProgress?.(`Importing "${section.title}"… (${i + 1}/${flatSections.length})`);
+    const content = rewriteAdventureRefs(section.body_html, ctx)
+      + relatedEntriesFooter(section.related_entries, ctx.actorsByEntryId);
+    tally(await importAdventurePage(journal, 'grSectionId', section.id, {
+      name: section.title,
+      level: SECTION_HEADING_LEVEL[section.type] || 2,
+      content,
+      contentHash: section.content_hash,
+      sortOrder: (i + 1) * 100000,
+    }));
+  }
+
+  return { journal, created, updated, unchanged };
 }
 
 /** GR size word -> Foundry dnd5e size code. */
@@ -1593,6 +1818,122 @@ class ImportRollTablesForm extends FormApplicationBase {
   }
 }
 
+/**
+ * Imports a whole module as one structured Journal Entry (Stage 13, the capstone
+ * composing Stages 9–12) — pick a module, review the preview (title, summary,
+ * section count), and click **Import Adventure** once. Unlike the other pickers
+ * this is a single module-wide action with nothing per-row to click — see
+ * `importAdventure()` for what actually happens.
+ */
+class ImportAdventureForm extends FormApplicationBase {
+  static get defaultOptions() {
+    return foundry.utils.mergeObject(super.defaultOptions, {
+      id: 'grfc-import-adventure',
+      title: 'Geektastic Realms — Import Adventure',
+      width: 640,
+      height: 480,
+      closeOnSubmit: false,
+      resizable: true,
+    });
+  }
+
+  getData() {
+    return {};
+  }
+
+  async _renderInner() {
+    const html = `
+      <form class="grfc-import-adventure" style="padding:.5rem;display:flex;flex-direction:column;height:100%;box-sizing:border-box;">
+        <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.5rem;">
+          <label style="white-space:nowrap;color:var(--color-text-dark-secondary,#666);font-size:.85em;">Module:</label>
+          <select class="grfc-module-select" style="flex:1 1 auto;min-width:0;" disabled>
+            <option value="">Loading modules…</option>
+          </select>
+        </div>
+        <div class="grfc-adventure-preview" style="flex:1 1 auto;overflow-y:auto;color:var(--color-text-dark-secondary,#666);font-size:.9em;line-height:1.5;"></div>
+        <p id="grfc-adventure-status" style="color:var(--color-text-dark-secondary,#666);margin:.5rem 0;">Loading modules…</p>
+        <button type="button" class="grfc-import-adventure-btn" style="margin-top:.5rem;" disabled>Import Adventure</button>
+      </form>
+    `;
+    return $(html);
+  }
+
+  activateListeners(html) {
+    super.activateListeners(html);
+    this._loadModules(html);
+    html.find('.grfc-module-select').on('change', () => this._loadPreview(html));
+    html.find('.grfc-import-adventure-btn').on('click', () => this._doImport(html));
+  }
+
+  async _loadModules(html) {
+    await populateModuleSelect(
+      html.find('.grfc-module-select'),
+      html.find('#grfc-adventure-status'),
+      'No adventure modules found in this Geektastic Realms world.',
+      'Choose a module to import.'
+    );
+  }
+
+  async _loadPreview(html) {
+    const moduleId = html.find('.grfc-module-select').val();
+    const preview = html.find('.grfc-adventure-preview');
+    const status = html.find('#grfc-adventure-status');
+    const importBtn = html.find('.grfc-import-adventure-btn');
+    preview.empty();
+    importBtn.prop('disabled', true);
+
+    if (!moduleId) {
+      status.text('Choose a module to import.');
+      return;
+    }
+
+    status.text('Loading adventure…');
+    const result = await fetchModulePrepare(moduleId);
+    if (!result.ok) {
+      status.text(`✘ ${result.error}`).css('color', '#c62828');
+      return;
+    }
+
+    const mod = result.body.module;
+    const sectionCount = flattenSectionTree(result.body.sections).length;
+    preview.html(`
+      <p><strong>${escapeHtml(mod.title)}</strong></p>
+      <p>${escapeHtml(mod.summary || 'No summary.')}</p>
+      <p>${sectionCount} section${sectionCount === 1 ? '' : 's'} will become pages of one Journal Entry, alongside any handouts already imported for this module.</p>
+    `);
+    status.text('Ready to import.').css('color', '');
+    importBtn.prop('disabled', false);
+  }
+
+  async _doImport(html) {
+    const moduleId = html.find('.grfc-module-select').val();
+    const status = html.find('#grfc-adventure-status');
+    const importBtn = html.find('.grfc-import-adventure-btn');
+    if (!moduleId) return;
+
+    importBtn.prop('disabled', true);
+    status.css('color', '');
+
+    try {
+      const { journal, created, updated, unchanged } = await importAdventure(moduleId, (msg) => status.text(msg));
+      const parts = [];
+      if (created) parts.push(`${created} created`);
+      if (updated) parts.push(`${updated} updated`);
+      if (unchanged) parts.push(`${unchanged} already up to date`);
+      const summary = parts.length ? parts.join(', ') : 'nothing to import';
+
+      status.text(`✔ Done — ${summary}.`).css('color', '#2e7d32');
+      ui.notifications.info(`Geektastic Realms Foundry Connect: imported adventure "${journal.name}" (${summary}).`);
+      journal.sheet.render(true);
+    } catch (err) {
+      status.text(`✘ ${err.message}`).css('color', '#c62828');
+      ui.notifications.error(`Geektastic Realms Foundry Connect: failed to import adventure — ${err.message}`);
+    } finally {
+      importBtn.prop('disabled', false);
+    }
+  }
+}
+
 Hooks.once('init', () => {
   game.settings.register(MODULE_ID, 'serverUrl', {
     name: 'Geektastic Realms Server URL',
@@ -1674,6 +2015,15 @@ Hooks.once('init', () => {
     hint: 'Pick a module and import every one of its roll tables as native Foundry RollTable documents, rollable with Foundry\'s own dice.',
     icon: 'fas fa-dice-d20',
     type: ImportRollTablesForm,
+    restricted: true,
+  });
+
+  game.settings.registerMenu(MODULE_ID, 'importAdventureMenu', {
+    name: 'Import Adventure',
+    label: 'Import Adventure',
+    hint: 'Pick a module and import its whole section tree as one Journal Entry, with encounter/handout/roll table references linked to whatever Actors, pages, and tables you\'ve already imported.',
+    icon: 'fas fa-scroll',
+    type: ImportAdventureForm,
     restricted: true,
   });
 });

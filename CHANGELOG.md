@@ -9,6 +9,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.5.0] - 2026-07-22
+
+### Added
+- **Stage 13 — Adventure → Journal export, the capstone composing Stages 9–12.**
+  New **Import Adventure** settings menu: pick a module, preview its title/summary/
+  section count, and click **Import Adventure** to build one Journal Entry for the
+  whole thing — one page per Act/Chapter/Scene/Appendix, in the same order the run
+  view reads top-to-bottom.
+  - Reuses the same per-module Journal Entry Stage 11 already creates for handouts
+    — a module's narrative and its handouts end up in one place, not two competing
+    journals.
+  - `encounter-ref`/`handout-ref`/`roll-table-ref` chips already embedded in a
+    section's body are rewritten into `@UUID` links to whatever Actors, handout
+    pages, and RollTables Stages 10–12 already created for them — falling back to
+    plain, undecorated text for anything not yet imported, rather than a broken
+    link.
+  - Each page's Related Articles (entry mentions) are appended as a footer,
+    linked to a matching Actor where Stage 9 already created one.
+  - Re-runnable: every page keeps a `content_hash`, so re-importing only rebuilds
+    pages whose section actually changed — an unchanged page's position (`sort`)
+    is still kept current in case sections were added, removed, or reordered, but
+    its content is left untouched.
+  - This stage deliberately creates **no** new Actors/RollTables/handout pages
+    itself — only Stages 9–12 do that; here they're just linked to.
+  - New helpers: `fetchModulePrepare()`, `flattenSectionTree()`,
+    `rewriteAdventureRefs()`, `relatedEntriesFooter()`, `importAdventurePage()`,
+    `importAdventure()`.
+
+### Changed
+- **Requires Geektastic Realms v1.24.0+** for Import Adventure's
+  `/api/foundry/v1/modules/{moduleId}/prepare` endpoint. Everything shipped before
+  this release still works unchanged against older GR versions.
+
 ## [1.4.0] - 2026-07-19
 
 ### Added
@@ -311,7 +344,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   response).
 - Verified against Foundry VTT v13. Not yet tested against v14.
 
-[Unreleased]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v1.2.1...v1.3.0
 [1.2.1]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v1.2.0...v1.2.1

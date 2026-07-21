@@ -17,7 +17,7 @@ for the shipped Stages 1–7, and
 [FOUNDRY_API.md](https://github.com/Geektasticdad/geektastic-realms/blob/main/Tech_Docs/FOUNDRY_API.md)
 for the API contract this module talks to.
 
-## Current stage: Stage 12 — Roll Tables → native RollTables
+## Current stage: Stage 13 — Adventure → Journal export
 
 This version registers your Geektastic Realms server URL and API token (Stage 2), syncs
 your world's Item-type compendiums so Geektastic Realms can match stat block features/
@@ -33,9 +33,12 @@ previously-created Actor in place when you re-import it instead of duplicating i
 encounter's adversary roster in one action (Stage 10) — see
 [Deploying an Encounter](#deploying-an-encounter), can import a whole module's
 handouts as one Journal Entry (Stage 11) — see
-[Importing Handouts](#importing-handouts), and (Stage 12) can now **import a module's
-roll tables as native, rollable Foundry RollTable documents** — see
-[Importing Roll Tables](#importing-roll-tables) below.
+[Importing Handouts](#importing-handouts), can import a module's roll tables as
+native, rollable Foundry RollTable documents (Stage 12) — see
+[Importing Roll Tables](#importing-roll-tables), and (Stage 13, the capstone) can now
+**import a whole module's narrative as one Journal Entry**, with encounter/handout/
+roll table references linked to whatever you've already imported — see
+[Importing an Adventure](#importing-an-adventure) below.
 
 ## Requirements
 
@@ -46,7 +49,8 @@ roll tables as native, rollable Foundry RollTable documents** — see
   Up to date / Changed) — older versions still work, but every entry with a matching
   Actor will show as "Changed" rather than "Up to date". **v1.21.0+** is needed for
   Deploy Encounter's module/encounter pickers. **v1.22.0+** is needed for Import
-  Handouts. **v1.23.0+** is needed for Import Roll Tables.
+  Handouts. **v1.23.0+** is needed for Import Roll Tables. **v1.24.0+** is needed
+  for Import Adventure.
 
 ## Installation
 
@@ -214,6 +218,41 @@ never counts as a change. A failure on one table doesn't stop the rest.
 
 Once imported, roll the table from Foundry's own Rollable Tables sidebar — real
 dice, real chat output, no need to open Geektastic Realms mid-session.
+
+## Importing an Adventure
+
+*The capstone — run this after you've imported the encounters, handouts, and roll
+tables you want linked; it composes what they already built rather than creating
+anything new itself.*
+
+In Module Settings, click **Import Adventure**. Pick a **Module** from the dropdown
+and you'll see its title, summary, and how many sections it has, then click
+**Import Adventure**.
+
+Every Act, Chapter, Scene, and Appendix becomes a page in one Journal Entry — the
+same journal Import Handouts uses for this module, so a module's narrative and its
+handouts end up together, not in two separate places. Pages come in the same order
+you'd read the adventure top-to-bottom, each with a heading level matching its type
+(Acts as top-level headings, Chapters and Appendices one level in, Scenes another
+level deeper).
+
+Anywhere you used **⚔ Insert Encounter**, **📄 Insert Handout**, or **🎲 Insert Roll
+Table** in Geektastic Realms, that reference becomes a real Foundry link — to the
+Actors an encounter's adversaries were deployed as (if you've run Deploy Encounter
+for it), the handout's page (if you've run Import Handouts), or the table (if
+you've run Import Roll Tables). Anything you haven't imported yet still shows up as
+plain text — a name, not a broken link — so nothing looks broken, it just isn't
+clickable yet. Any lore entries linked to a section (its Related Articles) show up
+the same way: linked if that entry has an Actor in this world, plain text otherwise.
+
+Re-running this later only rebuilds pages whose section actually changed in
+Geektastic Realms since your last import — everything else is left alone. If
+you've added, removed, or reordered sections, every page's position is still kept
+current even when its content wasn't touched, so the journal stays in the right
+order. A failure on one section doesn't stop the rest.
+
+The journal opens automatically when the import finishes — from there, run the
+session straight from Foundry.
 
 ## Development notes
 
