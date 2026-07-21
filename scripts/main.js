@@ -183,6 +183,11 @@ async function fetchModuleHandouts(moduleId) {
   return apiFetch(`/api/foundry/v1/modules/${moduleId}/handouts`);
 }
 
+/** Fetches every roll table (with full rows) in one module, each with a content_hash (Stage 12). */
+async function fetchModuleRollTables(moduleId) {
+  return apiFetch(`/api/foundry/v1/modules/${moduleId}/roll-tables`);
+}
+
 /** MIME type -> file extension, for icons downloaded from GR's media library. */
 const ICON_MIME_EXT = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif' };
 
@@ -313,6 +318,74 @@ async function importHandouts(moduleId, moduleTitle, handouts, onProgress) {
   }
 
   return { journal, created, updated, unchanged, failed };
+}
+
+/**
+ * Every RollTable in this world previously imported by this module, keyed by the GR
+ * roll table id it was built from (Stage 12's `grRollTableId` flag) — same
+ * find-by-flag pattern `syncedActorsByEntryId()` established for Actors.
+ */
+function syncedRollTablesByGrId() {
+  const map = new Map();
+  for (const table of game.tables) {
+    const grId = table.getFlag(MODULE_ID, 'grRollTableId');
+    if (grId != null) map.set(grId, table);
+  }
+  return map;
+}
+
+/**
+ * Mirrors `App\Support\RollTables::withPadding()` on the GR side: if the table's
+ * computed die has more faces than the highest authored `range_end`, appends one
+ * synthetic "No result" row spanning the gap, so a native Foundry draw always finds
+ * a match — the GR API returns authored rows only, the same as its own general-
+ * purpose API, so this padding has to be reconstructed client-side to keep parity
+ * with what the GR web run view already shows.
+ */
+function withPaddedRollTableRows(rows, die) {
+  if (!rows.length) return rows;
+  const faces = parseInt(String(die).replace(/[^\d]/g, ''), 10) || 0;
+  const maxRange = rows.reduce((max, r) => Math.max(max, r.range_end), 0);
+  if (faces <= maxRange) return rows;
+  return [...rows, { range_start: maxRange + 1, range_end: faces, title: null, description: 'No result' }];
+}
+
+/** One GR roll table row -> a Foundry TableResult's display text (title + description, whichever are present). */
+function rollTableRowText(row) {
+  if (row.title && row.description) return `${row.title} — ${row.description}`;
+  return row.title || row.description || '';
+}
+
+/**
+ * Imports one GR roll table as a native Foundry RollTable document (Stage 12) —
+ * created on first import, found and reused (by `grRollTableId` flag) and updated
+ * in place on later ones. Every existing TableResult is cleared and rebuilt from
+ * GR's current rows on update, the same convergent-rebuild approach Stage 9 uses for
+ * an Actor's items — simpler and safer than trying to diff individual rows.
+ */
+async function importRollTable(table, existing, onProgress) {
+  onProgress?.(`Importing "${table.title}"…`);
+
+  const faces = parseInt(String(table.die).replace(/[^\d]/g, ''), 10) || 20;
+  const formula = `1d${faces}`;
+  const resultsData = withPaddedRollTableRows(table.rows || [], table.die).map((row) => ({
+    type: CONST.TABLE_RESULT_TYPES.TEXT,
+    text: rollTableRowText(row),
+    range: [row.range_start, row.range_end],
+    weight: 1,
+  }));
+  const flags = { [MODULE_ID]: { grRollTableId: table.id, grContentHash: table.content_hash, grSyncedAt: new Date().toISOString() } };
+
+  let doc = existing;
+  if (existing) {
+    await existing.update({ name: table.title, formula, flags });
+    const staleIds = existing.results.map((r) => r.id);
+    if (staleIds.length) await existing.deleteEmbeddedDocuments('TableResult', staleIds);
+  } else {
+    doc = await RollTable.create({ name: table.title, formula, flags });
+  }
+  if (resultsData.length) await doc.createEmbeddedDocuments('TableResult', resultsData);
+  return doc;
 }
 
 /** GR size word -> Foundry dnd5e size code. */
@@ -1355,6 +1428,171 @@ class ImportHandoutsForm extends FormApplicationBase {
   }
 }
 
+/**
+ * Imports a module's roll tables as native Foundry RollTable documents (Stage 12) —
+ * pick a module, preview which tables are New / Up to date / Changed, and click
+ * **Import Roll Tables** once to bring the whole set current. Once native, a DM
+ * rolls them with Foundry's own dice + chat output — no GR run view needed
+ * mid-session.
+ */
+class ImportRollTablesForm extends FormApplicationBase {
+  static get defaultOptions() {
+    return foundry.utils.mergeObject(super.defaultOptions, {
+      id: 'grfc-import-roll-tables',
+      title: 'Geektastic Realms — Import Roll Tables',
+      width: 640,
+      height: 600,
+      closeOnSubmit: false,
+      resizable: true,
+    });
+  }
+
+  getData() {
+    return {};
+  }
+
+  async _renderInner() {
+    const html = `
+      <form class="grfc-import-roll-tables" style="padding:.5rem;display:flex;flex-direction:column;height:100%;box-sizing:border-box;">
+        <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.5rem;">
+          <label style="white-space:nowrap;color:var(--color-text-dark-secondary,#666);font-size:.85em;">Module:</label>
+          <select class="grfc-module-select" style="flex:1 1 auto;min-width:0;" disabled>
+            <option value="">Loading modules…</option>
+          </select>
+        </div>
+        <p id="grfc-roll-tables-status" style="color:var(--color-text-dark-secondary,#666);margin:.25rem 0 .5rem;">Loading modules…</p>
+        <ul class="grfc-roll-tables-list" style="list-style:none;margin:0;padding:0;flex:1 1 auto;overflow-y:auto"></ul>
+        <button type="button" class="grfc-import-roll-tables-btn" style="margin-top:.5rem;" disabled>Import Roll Tables</button>
+      </form>
+    `;
+    return $(html);
+  }
+
+  activateListeners(html) {
+    super.activateListeners(html);
+    this._loadModules(html);
+    html.find('.grfc-module-select').on('change', () => this._loadRollTables(html));
+    html.find('.grfc-import-roll-tables-btn').on('click', () => this._doImport(html));
+  }
+
+  async _loadModules(html) {
+    await populateModuleSelect(
+      html.find('.grfc-module-select'),
+      html.find('#grfc-roll-tables-status'),
+      'No adventure modules found in this Geektastic Realms world.',
+      'Choose a module to see its roll tables.'
+    );
+  }
+
+  async _loadRollTables(html) {
+    const moduleId = html.find('.grfc-module-select').val();
+    const list = html.find('.grfc-roll-tables-list');
+    const status = html.find('#grfc-roll-tables-status');
+    const importBtn = html.find('.grfc-import-roll-tables-btn');
+    list.empty();
+    importBtn.prop('disabled', true);
+
+    if (!moduleId) {
+      status.text('Choose a module to see its roll tables.');
+      return;
+    }
+
+    status.text('Loading roll tables…');
+    const result = await fetchModuleRollTables(moduleId);
+    if (!result.ok) {
+      status.text(`✘ ${result.error}`).css('color', '#c62828');
+      return;
+    }
+
+    const rollTables = result.body.roll_tables || [];
+    if (rollTables.length === 0) {
+      status.text('No roll tables in this module.');
+      return;
+    }
+    status.text(`${rollTables.length} roll table${rollTables.length === 1 ? '' : 's'} in this module.`);
+
+    const synced = syncedRollTablesByGrId();
+    rollTables.forEach((table) => {
+      const existing = synced.get(table.id) || null;
+      const isChanged = !!existing && existing.getFlag(MODULE_ID, 'grContentHash') !== table.content_hash;
+      const statusLabel = !existing ? 'New' : isChanged ? '↻ Changed' : '✓ Up to date';
+      const statusColor = !existing ? 'var(--color-text-dark-secondary,#666)' : isChanged ? '#b26a00' : '#2e7d32';
+
+      const li = $(`
+        <li style="display:flex;align-items:center;gap:.5rem;padding:.35rem 0;border-bottom:1px solid #7773;">
+          <span style="flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+            <strong>${escapeHtml(table.title)}</strong>
+            <span style="color:var(--color-text-dark-secondary,#666);font-size:.85em;"> — ${escapeHtml(table.die)}, ${table.rows.length} row${table.rows.length === 1 ? '' : 's'}${table.section_title ? ' — ' + escapeHtml(table.section_title) : ''}</span>
+          </span>
+          <span style="flex:0 0 auto;font-size:.8em;color:${statusColor};white-space:nowrap;">${statusLabel}</span>
+        </li>
+      `);
+      list.append(li);
+    });
+
+    importBtn.prop('disabled', false);
+  }
+
+  async _doImport(html) {
+    const moduleId = html.find('.grfc-module-select').val();
+    const status = html.find('#grfc-roll-tables-status');
+    const importBtn = html.find('.grfc-import-roll-tables-btn');
+    if (!moduleId) return;
+
+    importBtn.prop('disabled', true);
+    status.css('color', '');
+
+    const result = await fetchModuleRollTables(moduleId);
+    if (!result.ok) {
+      status.text(`✘ ${result.error}`).css('color', '#c62828');
+      importBtn.prop('disabled', false);
+      return;
+    }
+
+    const rollTables = result.body.roll_tables || [];
+    const synced = syncedRollTablesByGrId();
+
+    let created = 0;
+    let updated = 0;
+    let unchanged = 0;
+    const failed = [];
+
+    for (let i = 0; i < rollTables.length; i++) {
+      const table = rollTables[i];
+      const existing = synced.get(table.id) || null;
+      if (existing && existing.getFlag(MODULE_ID, 'grContentHash') === table.content_hash) {
+        unchanged++;
+        continue;
+      }
+      try {
+        const doc = await importRollTable(table, existing, (msg) => status.text(`(${i + 1}/${rollTables.length}) ${msg}`));
+        synced.set(table.id, doc);
+        if (existing) updated++;
+        else created++;
+      } catch (err) {
+        failed.push({ name: table.title, error: err.message });
+      }
+    }
+
+    const parts = [];
+    if (created) parts.push(`${created} created`);
+    if (updated) parts.push(`${updated} updated`);
+    if (unchanged) parts.push(`${unchanged} already up to date`);
+    const summary = parts.length ? parts.join(', ') : 'nothing to import';
+
+    if (failed.length === 0) {
+      status.text(`✔ Done — ${summary}.`).css('color', '#2e7d32');
+      ui.notifications.info(`Geektastic Realms Foundry Connect: imported roll tables (${summary}).`);
+    } else {
+      status.text(`⚠ ${summary}, ${failed.length} failed`).attr('title', failed.map((f) => `${f.name}: ${f.error}`).join('\n')).css('color', '#b26a00');
+      ui.notifications.warn(`Geektastic Realms Foundry Connect: imported roll tables (${summary}) with ${failed.length} failure(s).`);
+    }
+
+    importBtn.prop('disabled', false);
+    await this._loadRollTables(html);
+  }
+}
+
 Hooks.once('init', () => {
   game.settings.register(MODULE_ID, 'serverUrl', {
     name: 'Geektastic Realms Server URL',
@@ -1427,6 +1665,15 @@ Hooks.once('init', () => {
     hint: 'Pick a module and import every one of its handouts as pages of a Journal Entry, ready to Show to Players at the table.',
     icon: 'fas fa-book-open',
     type: ImportHandoutsForm,
+    restricted: true,
+  });
+
+  game.settings.registerMenu(MODULE_ID, 'importRollTablesMenu', {
+    name: 'Import Roll Tables',
+    label: 'Import Roll Tables',
+    hint: 'Pick a module and import every one of its roll tables as native Foundry RollTable documents, rollable with Foundry\'s own dice.',
+    icon: 'fas fa-dice-d20',
+    type: ImportRollTablesForm,
     restricted: true,
   });
 });

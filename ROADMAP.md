@@ -16,14 +16,15 @@ tables*, then *the whole adventure*.
 
 ---
 
-## Current state (v1.3.0)
+## Current state (v1.4.0)
 
 Shipped: connection handshake (Stage 2), compendium sync (Stage 3), Actor creation from
 any GR stat block with compendium-match reuse (Stage 5), custom icons on fresh items
 (Stage 6), precise dnd5e item typing (Stage 7), a real release pipeline (Stage 8),
 Actor re-sync (Stage 9), Deploy Encounter with token placement (Stage 10), Handouts →
-Journal (Stage 11), plus search/category filters, a destination-folder picker, and
-Actor portraits from GR featured images (v0.7–v0.9).
+Journal (Stage 11), Roll Tables → native RollTables (Stage 12), plus search/category
+filters, a destination-folder picker, and Actor portraits from GR featured images
+(v0.7–v0.9).
 
 All seven build-out stages (handshake, compendium sync, matching, Actor creation,
 icons, item typing) are now **✅ confirmed against a real Foundry world** — see the main
@@ -31,6 +32,9 @@ repo's build log. Stages 9 (Actor re-sync), 10 (Deploy Encounter, including the
 v1.2.1 token-placement fix), and 11 (Handouts → Journal) are now **✅ confirmed
 working in a live world** too. Known debts, in rough order of risk:
 
+- **Stage 12 (Roll Tables → native RollTables) hasn't been verified against a live
+  GR instance yet** — the round-trip described in its own "Verification" line below
+  hasn't actually been run.
 - v14 compatibility is still unverified (`compatibility.verified` stays at `13` until
   actually tested there).
 
@@ -159,19 +163,37 @@ tokens, and the linked Combat all came through correctly.
 v1.22.0). **Verification: ✅ confirmed** — imported a module's handouts against a
 live Foundry world and GR deployment; pages rendered correctly.
 
-## Stage 12 — Roll Tables → native RollTables
+## Stage 12 — Roll Tables → native RollTables ✅ shipped (code-complete; live verification still open)
 
-- Import a GR roll table as a Foundry **RollTable** document: ranges map to result
-  ranges, the computed die maps to the table formula, descriptions to result text. The
-  DM-only note fields stay behind (GM-visible documents anyway, but keep the mapping
-  conservative: rows only).
-- Same idempotent update-in-place behavior as Stages 9/11.
-- Once native, table draws use Foundry's own dice + chat output — no GR run-view needed
-  mid-session.
+- [x] GR dependency shipped first, in GR v1.23.0: a Foundry-prefixed equivalent,
+  `GET /api/foundry/v1/modules/{moduleId}/roll-tables` — every table in a module
+  with full rows and a `content_hash` computed over only `title` + row
+  `range_start`/`range_end`/`title`/`type`/`description`, deliberately excluding
+  `dm_notes`/`dm_note`. See
+  [Tech_Docs/FOUNDRY_API.md](https://github.com/Geektasticdad/geektastic-realms/blob/main/Tech_Docs/FOUNDRY_API.md)
+  in the main repo.
+- [x] New **Import Roll Tables** dialog: pick a module → preview every table's
+  status (New / ✓ Up to date / ↻ Changed) → one **Import Roll Tables** button
+  imports the whole set. Ranges map to result ranges, the computed die maps to the
+  table's roll formula (`1dN`), and each row's title + description become the
+  result text. The DM-only note fields stay behind — kept conservative to rows
+  only, per this stage's own scoping.
+- [x] A synthetic "No result" row is added client-side to span any gap between the
+  highest authored range and the die's full face count, mirroring GR's own
+  `RollTables::withPadding()` — a roll never comes up empty.
+- [x] Same idempotent update-in-place behavior as Stages 9/11: re-import finds the
+  same RollTable (flagged with `grRollTableId`, not found by name) and only
+  rebuilds tables whose content actually changed; a failure on one table doesn't
+  abort the rest.
+- [ ] **Live verification** — hasn't been run against a real Foundry world + GR
+  v1.23.0+ instance yet.
 
-**GR dependency:** the Roll Tables API (planned as Priority 1.2 in the main roadmap) or
-a Foundry-prefixed equivalent.
-**Verification:** a d20 table with a padded "No result" span rolls correctly in chat.
+**GR dependency:** `GET /api/foundry/v1/modules/{moduleId}/roll-tables` — ✅ shipped
+(GR v1.23.0). **Verification:** import a module with a table whose die has unused
+faces above its highest authored range, confirm the padded "No result" span rolls
+correctly in chat; edit a row in GR and re-import, confirming only that table
+rebuilds; edit only a DM note and re-import, confirming the table is left alone
+(still shows Up to date, not Changed).
 
 ## Stage 13 — Adventure → Journal export
 

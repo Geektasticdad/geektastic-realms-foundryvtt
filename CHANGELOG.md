@@ -9,6 +9,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.4.0] - 2026-07-19
+
+### Added
+- **Stage 12 — Roll Tables → native RollTables.** New **Import Roll Tables**
+  settings menu: pick a module, preview each table's status (New / ✓ Up to date /
+  ↻ Changed), and click **Import Roll Tables** to bring the whole module's tables
+  into native Foundry RollTable documents. Once imported, table draws use
+  Foundry's own dice + chat output — no GR run view needed mid-session.
+  - Ranges map to `TableResult` ranges, the computed die maps to the table's
+    roll formula (`1dN`), and each row's title + description become the result
+    text. Mirrors GR's own "No result" padding (a synthetic row spanning any gap
+    up to the die's full face count) so a roll never comes up empty.
+  - DM-only note fields (`dm_notes`/`dm_note`) deliberately stay behind — kept
+    conservative to rows only, per the roadmap's own scoping.
+  - Re-import finds the same RollTable again (flagged with `grRollTableId`, not
+    found by name) and only rebuilds tables whose content actually changed since
+    (same flag/hash approach as Stage 9/11) — a private-note-only edit on the GR
+    side never triggers a re-import here. A failure on one table doesn't abort
+    the rest.
+  - New helpers: `fetchModuleRollTables()`, `syncedRollTablesByGrId()`,
+    `withPaddedRollTableRows()`, `rollTableRowText()`, `importRollTable()`.
+
+### Changed
+- **Requires Geektastic Realms v1.23.0+** for Import Roll Tables'
+  `/api/foundry/v1/modules/{moduleId}/roll-tables` endpoint. Everything shipped
+  before this release still works unchanged against older GR versions.
+
 ## [1.3.0] - 2026-07-19
 
 ### Added
@@ -284,7 +311,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   response).
 - Verified against Foundry VTT v13. Not yet tested against v14.
 
-[Unreleased]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v1.2.1...v1.3.0
 [1.2.1]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v1.1.0...v1.2.0

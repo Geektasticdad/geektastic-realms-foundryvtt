@@ -17,7 +17,7 @@ for the shipped Stages 1–7, and
 [FOUNDRY_API.md](https://github.com/Geektasticdad/geektastic-realms/blob/main/Tech_Docs/FOUNDRY_API.md)
 for the API contract this module talks to.
 
-## Current stage: Stage 11 — Handouts → Journal
+## Current stage: Stage 12 — Roll Tables → native RollTables
 
 This version registers your Geektastic Realms server URL and API token (Stage 2), syncs
 your world's Item-type compendiums so Geektastic Realms can match stat block features/
@@ -31,9 +31,11 @@ release pipeline (Stage 8) — see [RELEASING.md](RELEASING.md), updates a
 previously-created Actor in place when you re-import it instead of duplicating it
 (Stage 9) — see [Re-syncing an Actor](#re-syncing-an-actor), can deploy a whole
 encounter's adversary roster in one action (Stage 10) — see
-[Deploying an Encounter](#deploying-an-encounter), and (Stage 11) can now **import a
-whole module's handouts as one Journal Entry**, ready to Show to Players — see
-[Importing Handouts](#importing-handouts) below.
+[Deploying an Encounter](#deploying-an-encounter), can import a whole module's
+handouts as one Journal Entry (Stage 11) — see
+[Importing Handouts](#importing-handouts), and (Stage 12) can now **import a module's
+roll tables as native, rollable Foundry RollTable documents** — see
+[Importing Roll Tables](#importing-roll-tables) below.
 
 ## Requirements
 
@@ -44,7 +46,7 @@ whole module's handouts as one Journal Entry**, ready to Show to Players — see
   Up to date / Changed) — older versions still work, but every entry with a matching
   Actor will show as "Changed" rather than "Up to date". **v1.21.0+** is needed for
   Deploy Encounter's module/encounter pickers. **v1.22.0+** is needed for Import
-  Handouts.
+  Handouts. **v1.23.0+** is needed for Import Roll Tables.
 
 ## Installation
 
@@ -190,6 +192,28 @@ and why.
 
 The journal opens automatically when the import finishes. From there, use Foundry's
 native **Show to Players** on any page at the table — that's the whole point.
+
+## Importing Roll Tables
+
+In Module Settings, click **Import Roll Tables**. Pick a **Module** from the
+dropdown, and every roll table in it appears below — die size, row count, which
+section it's in, and a status (**New**, **✓ Up to date**, or **↻ Changed**).
+
+Click **Import Roll Tables** and each one becomes a native Foundry RollTable
+document: ranges become result ranges, the computed die becomes the roll formula,
+and each row's title/description become the result text. If the table's die has
+unused faces above its highest authored range (e.g. 16 options rounding up to a
+d20), a "No result" row fills the gap automatically, the same padding Geektastic
+Realms' own web view already shows — a roll never comes up empty. DM notes stay
+behind on the Geektastic Realms side; only the rows themselves are imported.
+
+Re-running this later finds the same RollTable again (even if you've renamed it)
+and only rebuilds tables whose content actually changed since — an unchanged
+table is left completely alone. Editing a DM-only note without changing any row
+never counts as a change. A failure on one table doesn't stop the rest.
+
+Once imported, roll the table from Foundry's own Rollable Tables sidebar — real
+dice, real chat output, no need to open Geektastic Realms mid-session.
 
 ## Development notes
 
