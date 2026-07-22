@@ -239,9 +239,9 @@ Encounter), one handout shown to players (imported beforehand via Import Handout
 one table rolled (imported beforehand via Import Roll Tables); edit one section in
 GR, re-import, and confirm only that page rebuilds.
 
-## Stage 14 — Spellcasting fidelity ✅ shipped and confirmed working in a live world (spellcasting-summary feature in v1.6.1/v1.6.2, caster level + save proficiencies in v1.6.3, all three still unverified)
+## Stage 14 — Spellcasting fidelity ✅ shipped and confirmed working in a live world (spellcasting-summary feature in v1.6.1/v1.6.2, caster level + save proficiencies in v1.6.3, all confirmed)
 
-- [ ] **Spellcasting summary imported as a feature (v1.6.1, cloned from a
+- [x] **Spellcasting summary imported as a feature (v1.6.1, cloned from a
   compendium in v1.6.2)** — GR's plain-text spellcasting summary
   (`npc.spellcasting.description`) becomes its own "Spellcasting" feature Item on
   the Actor. Foundry's Actor sheet has nowhere else to put this prose. Runs right
@@ -285,16 +285,16 @@ GR, re-import, and confirm only that page rebuilds.
   onto dnd5e's own preparation modes (`always`/`pact`/`atwill`/`innate`) via
   `applySpellUsage()`, plus a best-effort daily-recovery `system.uses` counter for
   `per_day`, so these don't clone in looking like ordinary slot-based spells.
-- [ ] **Spellcaster level + explicit ability save proficiencies (v1.6.3, GR v1.29.0
+- [x] **Spellcaster level + explicit ability save proficiencies (v1.6.3, GR v1.29.0
   dependency)** — `spellcasting.caster_level` (1-20) sets `system.details.spellLevel`
-  (dnd5e's automatic spell-slot-table field — best-effort schema mapping, not
-  live-verified) and `npc.saving_throw_proficiencies` (six explicit booleans, not
-  spellcasting-specific) sets `abilities.*.proficient` on every ability — something
-  neither the create nor update path ever did before, since the only prior signal
-  (the free-text `saving_throws` line) was never read on the live-connection path at
-  all.
-- [x] **Live verification — ✅ confirmed working in a live world (except the
-  spellcasting-summary feature and this bullet — see their own status above/below).**
+  (dnd5e's automatic spell-slot-table field — best-effort schema mapping, confirmed
+  correct by live verification) and `npc.saving_throw_proficiencies` (six explicit
+  booleans, not spellcasting-specific) sets `abilities.*.proficient` on every
+  ability — something neither the create nor update path ever did before, since the
+  only prior signal (the free-text `saving_throws` line) was never read on the
+  live-connection path at all.
+- [x] **Live verification — ✅ confirmed working in a live world, including the
+  spellcasting-summary feature and spellcaster level/save proficiencies above.**
 
 **GR dependency:** structured spellcasting on stat blocks (main roadmap 2.6) — ✅
 shipped (GR v1.26.0, usage types included; `description` field for the summary
@@ -303,10 +303,11 @@ matching/usage-type behavior is **✅ confirmed** — including tracking down an
 false alarm where two spells reported as unmatched turned out to be a Sync
 Compendiums gap (the world's spell pack had never been ticked/synced, so
 `foundry_compendium_entries` had zero `item_type = 'spell'` rows to match against) —
-once synced, matching and cloning worked as designed. The v1.6.1 spellcasting-summary
-feature is **not yet verified** live — check that the "Spellcasting" feature Item
-appears with the expected text and doesn't collide oddly with an existing free-text
-trait of the same name.
+once synced, matching and cloning worked as designed. The v1.6.1/v1.6.2
+spellcasting-summary feature and the v1.6.3 spellcaster level/save proficiencies are
+now **✅ also confirmed** working live (after tracking down a GR-side bug in v1.28.0
+that silently dropped the summary whenever no spellcasting ability was set — fixed in
+v1.28.1, see that bullet's sub-notes above).
 
 ## Stage 15 — UX & platform
 
