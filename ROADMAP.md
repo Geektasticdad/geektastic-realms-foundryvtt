@@ -239,14 +239,44 @@ Encounter), one handout shown to players (imported beforehand via Import Handout
 one table rolled (imported beforehand via Import Roll Tables); edit one section in
 GR, re-import, and confirm only that page rebuilds.
 
-## Stage 14 — Spellcasting fidelity
+## Stage 14 — Spellcasting fidelity ✅ shipped (v1.6.0)
 
-- When a prepare payload carries GR's structured spell list (planned GR-side), match
-  spell names against the world's synced spell compendiums and clone matched spells
-  onto the created Actor with the right spellcasting ability/DC; unmatched names keep
-  today's free-text feature fallback.
+- [x] When a prepare payload carries GR's structured spell list, match spell names
+  against the world's synced spell compendiums and clone matched spells onto the
+  created Actor — reuses the same `resolveCompendiumItem()`/`fromUuid()` clone path
+  Stages 5/9 already use for features/items, applied in `createNpcInFoundry()` so both
+  Create Actor and Deploy Encounter get it for free.
+- [x] Sets `system.attributes.spellcasting` to the stat block's spellcasting ability,
+  so Foundry's own DC/attack derivation is correct even with no override.
+- [x] A DM-entered printed DC/attack override (an absolute value, e.g. "Spellcasting
+  DC 15") is applied as the *delta* from the standard `8 + proficiency + modifier` /
+  `proficiency + modifier` formula, set via dnd5e's bonus-formula fields
+  (`system.bonuses.spell.dc`, `.msak.attack`/`.rsak.attack`) — dnd5e has no raw
+  override field, so this is how the printed value is reproduced exactly. See
+  `spellcastingBonuses()`.
+- [x] Unmatched names keep today's free-text feature fallback (the existing
+  `spellcasting`-typed trait imports unchanged) — nothing is guessed, and a toast
+  tells the DM how many names had no exact match.
+- [x] GR-side matching only ever accepts an **exact** name match, not Stage 4's fuzzy
+  fallback — there's no per-spell review step, so a wrong fuzzy match would silently
+  clone the wrong spell with nothing to catch it.
+- [x] **Pact Magic and Innate Spellcasting (At Will / X-per-day), not just plain spell
+  slots** — each spell's `usage_type` (`slot`/`pact`/`at_will`/`per_day`) is mapped
+  onto dnd5e's own preparation modes (`always`/`pact`/`atwill`/`innate`) via
+  `applySpellUsage()`, plus a best-effort daily-recovery `system.uses` counter for
+  `per_day`, so these don't clone in looking like ordinary slot-based spells.
+- [ ] **Live verification** — hasn't been run against a real Foundry world + GR
+  v1.26.0+ instance yet.
 
-**GR dependency:** structured spellcasting on stat blocks (main roadmap 2.6).
+**GR dependency:** structured spellcasting on stat blocks (main roadmap 2.6) — ✅
+shipped (GR v1.26.0, usage types included). **Verification:** on a stat block with a
+spellcasting ability, DC/attack, and a spell list covering all four casting types
+(mixing exact-compendium-match and made-up names), create (then re-sync) its Actor and
+confirm: matched spells appear as real, rollable Items in the correct sheet section
+(Spellcasting / Pact Magic / Innate); the Actor sheet's spell DC/attack read exactly
+what was printed on the stat block; a `per_day` spell shows the right uses count; the
+free-text Spellcasting trait is untouched; unmatched names produce the toast warning
+and nothing else.
 
 ## Stage 15 — UX & platform
 

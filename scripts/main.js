@@ -648,6 +648,93 @@ function parseSenses(senses) {
   return { ...ranges, units: 'ft' };
 }
 
+/** Standard D&D 5e ability modifier: floor((score - 10) / 2). */
+function abilityModifier(score) {
+  return Math.floor((Number(score) - 10) / 2);
+}
+
+/**
+ * dnd5e's NPC sheet has no raw "override" field for spell save DC/attack — only
+ * `system.attributes.spellcasting` (the ability, which derives DC/attack via the
+ * standard `8 + proficiency + modifier` / `proficiency + modifier` core-rules formula)
+ * plus bonus-formula fields added on top of that derivation. GR's stat block editor
+ * stores the DM's *printed*, absolute values (e.g. "Spellcasting DC 15" — how every
+ * published stat block states it), so to land exactly on that value this computes the
+ * delta between the printed value and what the standard formula derives from this
+ * actor's own abilities/proficiency bonus, and sets that delta as the bonus. With no
+ * override given, no bonus is set and Foundry's own derivation is left alone.
+ * @param {object} npc - the prepare payload (has `abilities`, `proficiency_bonus`, `spellcasting`)
+ * @returns {{dc: ?string, attack: ?string}}
+ */
+function spellcastingBonuses(npc) {
+  const sc = npc.spellcasting;
+  if (!sc || !sc.ability) return { dc: null, attack: null };
+
+  const mod = abilityModifier((npc.abilities || {})[sc.ability] ?? 10);
+  const prof = Number(npc.proficiency_bonus) || 0;
+
+  return {
+    dc: sc.save_dc_override != null ? String(sc.save_dc_override - (8 + prof + mod)) : null,
+    attack: sc.attack_override != null ? String(sc.attack_override - (prof + mod)) : null,
+  };
+}
+
+/**
+ * A monster's spellcasting isn't always plain spell slots — Pact Magic (Warlock-style)
+ * and Innate Spellcasting (At Will / X per day, no slots at all) are both common on
+ * published stat blocks and render in a completely different section of a Foundry
+ * dnd5e sheet. Mutates a cloned spell item's `system.preparation` (and, for `per_day`,
+ * `system.uses`) in place to match the stat block's own `usage_type` before it's
+ * created on the actor — otherwise every cloned spell defaults to looking like
+ * ordinary prepared/slot casting regardless of how the compendium source had it set.
+ * `mode` values (`always`/`pact`/`atwill`/`innate`) are dnd5e's own
+ * `CONFIG.DND5E.spellPreparationModes` keys — the same ones driving the "Pact Magic"/
+ * "At Will"/"Innate" section headers on the actor sheet's spellbook tab.
+ *
+ * The `uses` shape for `per_day` is a best-effort guess at dnd5e's recovery schema
+ * (a daily-recovering limited-use counter) — worth spot-checking against a real Actor
+ * sheet; if it's off, the spell still clones and casts, just without an accurate
+ * uses-per-day counter.
+ */
+function applySpellUsage(itemData, spell) {
+  if (!itemData.system) itemData.system = {};
+
+  switch (spell.usage_type) {
+    case 'pact':
+      itemData.system.preparation = { mode: 'pact', prepared: true };
+      break;
+    case 'at_will':
+      itemData.system.preparation = { mode: 'atwill', prepared: true };
+      break;
+    case 'per_day':
+      itemData.system.preparation = { mode: 'innate', prepared: true };
+      if (spell.uses_per_day) {
+        itemData.system.uses = {
+          spent: 0,
+          max: String(spell.uses_per_day),
+          recovery: [{ period: 'day', type: 'recoverUp' }],
+        };
+      }
+      break;
+    default:
+      itemData.system.preparation = { mode: 'always', prepared: true };
+  }
+}
+
+/**
+ * Resolves a compendium_ref (Stage 4/14 match) via fromUuid() into a clonable plain
+ * item-data object (no _id), or null if it doesn't resolve — the source pack entry may
+ * no longer exist (e.g. deleted since the last sync) or no match was ever found.
+ */
+async function resolveCompendiumItem(compendiumRef) {
+  if (!compendiumRef || !compendiumRef.entry_uuid) return null;
+  const source = await fromUuid(compendiumRef.entry_uuid);
+  if (!source) return null;
+  const itemData = source.toObject();
+  delete itemData._id;
+  return itemData;
+}
+
 /**
  * Creates or reuses one Item on the actor: clones from a synced compendium entry via
  * fromUuid() when a Stage 4 match was confirmed (compendium_ref present), otherwise
@@ -656,18 +743,8 @@ function parseSenses(senses) {
  * Foundry document the way the static export (FoundryExport::toActorArray in GR) has to.
  */
 async function addItemToActor(actor, compendiumRef, freshItemData) {
-  if (compendiumRef && compendiumRef.entry_uuid) {
-    const source = await fromUuid(compendiumRef.entry_uuid);
-    if (source) {
-      const itemData = source.toObject();
-      delete itemData._id;
-      await actor.createEmbeddedDocuments('Item', [itemData]);
-      return;
-    }
-    // Fall through to fresh creation if the compendium entry no longer resolves
-    // (e.g. deleted from the pack since the last sync).
-  }
-  await actor.createEmbeddedDocuments('Item', [freshItemData]);
+  const cloned = await resolveCompendiumItem(compendiumRef);
+  await actor.createEmbeddedDocuments('Item', [cloned || freshItemData]);
 }
 
 function featureItemData(feature, imgPath) {
@@ -851,6 +928,13 @@ async function placeTokensForActor(actor, count, slotOffset, totalInEncounter) {
  * those are Foundry-side state GR has no opinion on, left alone by simply never
  * including them in the update payload.
  *
+ * Stage 14: if the payload carries a structured `spellcasting` profile, its ability is
+ * set on the Actor and any exactly-matched `spells` are cloned as real Items alongside
+ * the features/items above; see `spellcastingBonuses()` for how a printed DC/attack
+ * override is applied, and `applySpellUsage()` for how each spell's `usage_type`
+ * (plain slot / Pact Magic / At Will / X-per-day Innate) maps onto Foundry's
+ * preparation modes so it lands in the right sheet section.
+ *
  * @param {object} npc - the prepare payload (`GET .../npc/{id}/prepare`'s `npc` field)
  * @param {(msg: string) => void} [onProgress]
  * @param {string} [folderId] - Actors-directory folder for a **new** Actor; ignored when updating.
@@ -880,6 +964,7 @@ async function createNpcInFoundry(npc, onProgress, folderId, existingActor, sync
       hp: { value: npc.hit_points, max: npc.hit_points, formula: npc.hit_dice },
       movement: parseMovement(npc.speed),
       senses: parseSenses(npc.senses),
+      ...(npc.spellcasting?.ability ? { spellcasting: npc.spellcasting.ability } : {}),
     },
     details: {
       alignment: npc.alignment,
@@ -895,6 +980,18 @@ async function createNpcInFoundry(npc, onProgress, folderId, existingActor, sync
       ci: { value: [], custom: npc.condition_immunities || '' },
     },
   };
+
+  // Stage 14: a printed DC/attack override becomes the *delta* from the standard
+  // formula (see spellcastingBonuses() above), applied as dnd5e's bonus-formula fields
+  // — there's no raw override field to just set. Left off entirely when the DM hasn't
+  // set an override, so Foundry's own derivation from `attributes.spellcasting` stands.
+  const spellBonus = spellcastingBonuses(npc);
+  if (spellBonus.dc || spellBonus.attack) {
+    systemData.bonuses = {
+      ...(spellBonus.dc ? { spell: { dc: spellBonus.dc } } : {}),
+      ...(spellBonus.attack ? { msak: { attack: spellBonus.attack }, rsak: { attack: spellBonus.attack } } : {}),
+    };
+  }
 
   const flags = syncInfo
     ? { [MODULE_ID]: { grEntryId: syncInfo.entryId, grContentHash: syncInfo.contentHash, grSyncedAt: new Date().toISOString() } }
@@ -948,6 +1045,30 @@ async function createNpcInFoundry(npc, onProgress, folderId, existingActor, sync
       imgPath = await uploadIconToFoundry(items[i].icon_media_id, iconCache);
     }
     await addItemToActor(actor, items[i].compendium_ref, equipmentItemData(items[i], imgPath));
+  }
+
+  // Stage 14: only exact compendium matches are cloned as real spell Items — an
+  // unmatched name has no fresh-creation fallback (unlike features/items, GR doesn't
+  // send enough to hand-build a valid spell) and is simply left out; the DM's existing
+  // free-text "Spellcasting" trait (imported above as a regular feature, unaffected)
+  // is still there either way, so nothing is lost — just surfaced so the DM can add a
+  // matching compendium spell later if they want it to roll natively.
+  const spells = npc.spells || [];
+  let unmatchedSpells = 0;
+  for (let i = 0; i < spells.length; i++) {
+    onProgress?.(`Adding spells… (${i + 1}/${spells.length})`);
+    const cloned = await resolveCompendiumItem(spells[i].compendium_ref);
+    if (cloned) {
+      applySpellUsage(cloned, spells[i]);
+      await actor.createEmbeddedDocuments('Item', [cloned]);
+    } else {
+      unmatchedSpells++;
+    }
+  }
+  if (unmatchedSpells > 0) {
+    ui.notifications.warn(
+      `Geektastic Realms Foundry Connect: ${unmatchedSpells} spell${unmatchedSpells === 1 ? '' : 's'} on "${npc.name}" had no exact compendium match and were not added as items — the free-text Spellcasting trait still has them.`
+    );
   }
 
   return actor;

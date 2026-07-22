@@ -17,7 +17,7 @@ for the shipped Stages 1–7, and
 [FOUNDRY_API.md](https://github.com/Geektasticdad/geektastic-realms/blob/main/Tech_Docs/FOUNDRY_API.md)
 for the API contract this module talks to.
 
-## Current stage: Stage 13 — Adventure → Journal export
+## Current stage: Stage 14 — Spellcasting fidelity
 
 This version registers your Geektastic Realms server URL and API token (Stage 2), syncs
 your world's Item-type compendiums so Geektastic Realms can match stat block features/
@@ -35,10 +35,13 @@ encounter's adversary roster in one action (Stage 10) — see
 handouts as one Journal Entry (Stage 11) — see
 [Importing Handouts](#importing-handouts), can import a module's roll tables as
 native, rollable Foundry RollTable documents (Stage 12) — see
-[Importing Roll Tables](#importing-roll-tables), and (Stage 13, the capstone) can now
-**import a whole module's narrative as one Journal Entry**, with encounter/handout/
-roll table references linked to whatever you've already imported — see
-[Importing an Adventure](#importing-an-adventure) below.
+[Importing Roll Tables](#importing-roll-tables), can import a whole module's narrative
+as one Journal Entry (Stage 13, the capstone), with encounter/handout/roll table
+references linked to whatever you've already imported — see
+[Importing an Adventure](#importing-an-adventure), and (Stage 14) clones matched
+spells from a stat block's structured spell list onto its Actor as real, rollable
+spell Items with the right spellcasting ability/DC — see
+[Creating an Actor](#creating-an-actor) below.
 
 ## Requirements
 
@@ -50,7 +53,9 @@ roll table references linked to whatever you've already imported — see
   Actor will show as "Changed" rather than "Up to date". **v1.21.0+** is needed for
   Deploy Encounter's module/encounter pickers. **v1.22.0+** is needed for Import
   Handouts. **v1.23.0+** is needed for Import Roll Tables. **v1.24.0+** is needed
-  for Import Adventure.
+  for Import Adventure. **v1.25.0+** is needed for spellcasting fidelity — older
+  versions still create Actors fine, just without the `spellcasting`/`spells` fields
+  in the prepare payload, so no spell Items are cloned.
 
 ## Installation
 
@@ -127,7 +132,18 @@ rather than recreated from scratch — icon included; anything unmatched is buil
 from the stat block's own data, picks up a real icon if the DM attached one in the
 feature/item's **Icon** field on Geektastic Realms, and gets accurate Foundry item
 typing where GR's data supports it. Progress is shown live per step (actor, then
-features/icons, then equipment/icons).
+features/icons, then equipment/icons, then spells).
+
+If the stat block has a **Spell list** set up on the Geektastic Realms side (Stage 14),
+any spell name that exactly matches a spell in your synced compendiums is cloned onto
+the Actor as a real, rollable spell Item too, and the Actor's spellcasting ability
+(and DC/attack, if the DM set a printed override) is set to match. Each spell lands in
+the correct section of the Actor's spellbook based on how the DM tagged it on the
+Geektastic Realms side — ordinary Spellcasting, Pact Magic, or Innate (At Will / X per
+day) — instead of every cloned spell looking like it costs a slot it doesn't. A name
+with no exact match isn't guessed at — it's simply skipped, and a notification tells
+you how many. The stat block's free-text "Spellcasting" trait still imports as a
+regular feature either way, unaffected.
 
 ## Re-syncing an Actor
 

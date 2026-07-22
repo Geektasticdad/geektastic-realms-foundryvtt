@@ -9,6 +9,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.6.0] - 2026-07-22
+
+### Added
+- **Stage 14 — Spellcasting fidelity.** When a stat block's prepare payload carries
+  GR's new structured spell list, `createNpcInFoundry()` now clones every exactly-
+  matched spell onto the created/re-synced Actor as a real, rollable Item — reusing
+  the same compendium-clone path (`fromUuid()`) Stages 5/9 already use for
+  features/items, so it works for both **Create Actor** and **Deploy Encounter**
+  automatically.
+  - Sets `system.attributes.spellcasting` to the stat block's spellcasting ability so
+    Foundry's own DC/attack derivation is correct.
+  - A DM-entered printed DC/attack override is reproduced exactly by computing the
+    delta from the standard 5e formula and applying it as dnd5e's bonus-formula
+    fields — dnd5e has no raw "set this exact DC" field, only the ability +
+    derivation, so this is the only way to land on the DM's stated value. See
+    `spellcastingBonuses()` in `scripts/main.js`.
+  - Unmatched spell names are left alone — the existing free-text "Spellcasting"
+    trait still imports exactly as before — and a toast tells the DM how many names
+    had no exact compendium match, so nothing silently disappears.
+  - Matching is **exact-name-only** (case-insensitive), not GR's Stage 4 fuzzy
+    fallback — there's no per-spell review step here, so a wrong fuzzy guess would
+    silently clone the wrong spell with no human catching it.
+  - **Pact Magic and Innate Spellcasting (At Will / X per day), not just plain spell
+    slots** — each spell on GR's list carries a `usage_type`
+    (`slot`/`pact`/`at_will`/`per_day`), and `applySpellUsage()` maps it onto dnd5e's
+    own preparation modes (`always`/`pact`/`atwill`/`innate`) before the clone is
+    created, plus a best-effort daily-recovery `system.uses` counter for `per_day`.
+    Without this, e.g. a devil's at-will *Invisibility* would've cloned in looking
+    like an ordinary prepared spell that costs a slot it doesn't.
+  - **GR dependency:** `stat_blocks.spellcasting_ability`/`spell_save_dc_override`/
+    `spell_attack_override` + `stat_block_spells` (incl. `usage_type`/`uses_per_day`),
+    and `spellcasting`/`spells` on `GET /api/foundry/v1/npc/{entryId}/prepare` — ✅
+    shipped (GR v1.26.0). See
+    [Tech_Docs/FOUNDRY_API.md](https://github.com/Geektasticdad/geektastic-realms/blob/main/Tech_Docs/FOUNDRY_API.md)
+    "Spellcasting fidelity" in the main repo.
+
 ## [1.5.0] - 2026-07-22
 
 ### Added
