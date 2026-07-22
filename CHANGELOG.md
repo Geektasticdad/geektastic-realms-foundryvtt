@@ -9,6 +9,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.6.3] - 2026-07-22
+
+### Added
+- **Spellcaster level and explicit saving-throw proficiencies** (GR v1.29.0).
+  `npc.spellcasting.caster_level` (1-20) is set on `system.details.spellLevel` —
+  dnd5e's field for auto-computing a standard spell-slot table on the Actor. This
+  mapping is my best understanding of the current dnd5e schema, not verified against
+  a live world — worth checking the Actor's spell slots after import.
+  `npc.saving_throw_proficiencies` (always present, not spellcasting-specific — six
+  explicit booleans set on the GR side, independent of the free-text `Saving Throws`
+  line) now sets `abilities.*.proficient` on every created/re-synced Actor; this
+  never happened at all before, on either the create or update path.
+
+## [1.6.2] - 2026-07-22
+
+### Changed
+- **Spellcasting summary feature now clones the game system's own "Spellcasting"
+  feat instead of hand-building a bare one.** `spellcastingSummaryItemData()` (added
+  in v1.6.1) now looks up a compendium Item named "Spellcasting" (type `feat`) across
+  every Item-type pack in the world via the new `findCompendiumItemByName()`, clones
+  it, and swaps only its description for GR's summary text — carrying over whatever
+  icon/subtype/activities the system's own version defines, so the imported feature
+  looks native rather than generic. Falls back to the old hand-built plain feat when
+  no such compendium entry is found (e.g. the system's features pack isn't
+  installed).
+
 ## [1.6.1] - 2026-07-22
 
 ### Added

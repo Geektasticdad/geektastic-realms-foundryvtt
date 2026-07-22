@@ -55,7 +55,10 @@ spell Items with the right spellcasting ability/DC — see
   Handouts. **v1.23.0+** is needed for Import Roll Tables. **v1.24.0+** is needed
   for Import Adventure. **v1.25.0+** is needed for spellcasting fidelity — older
   versions still create Actors fine, just without the `spellcasting`/`spells` fields
-  in the prepare payload, so no spell Items are cloned.
+  in the prepare payload, so no spell Items are cloned. **v1.28.1+** is needed for
+  the spellcasting summary feature to actually import (a bug in v1.28.0 silently
+  dropped it whenever no spellcasting ability was set). **v1.29.0+** is needed for
+  spellcaster level and ability save proficiencies to carry over.
 
 ## Installation
 
@@ -143,11 +146,18 @@ Geektastic Realms side — ordinary Spellcasting, Pact Magic, or Innate (At Will
 day) — instead of every cloned spell looking like it costs a slot it doesn't. A name
 with no exact match isn't guessed at — it's simply skipped, and a notification tells
 you how many. If the DM also filled in a plain-text **spellcasting summary** on the
-Geektastic Realms side, it's added as its own "Spellcasting" feature Item (same as any
-other feature). The stat block's free-text "Spellcasting" trait still imports as a
+Geektastic Realms side, it's added as its own "Spellcasting" feature Item — cloned
+from your game system's own "Spellcasting" compendium feat when one exists (so it
+carries the system's own icon/styling), with just its description replaced by GR's
+summary text. The stat block's free-text "Spellcasting" trait still imports as a
 regular feature either way, unaffected — if both are filled in, you'll see two
 "Spellcasting"-ish features on the Actor until that trait is cleaned up on the
 Geektastic Realms side.
+
+If the DM set a **Spellcaster level** (1-20), it's applied to the Actor's automatic
+spell-slot table. If the DM checked any **Save prof.** boxes on the ability scores
+(Geektastic Realms side, independent of the free-text Saving Throws line), those
+abilities are marked proficient on the created/re-synced Actor.
 
 ## Re-syncing an Actor
 

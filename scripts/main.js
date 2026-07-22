@@ -761,16 +761,59 @@ function featureItemData(feature, imgPath) {
 }
 
 /**
- * Builds a "Spellcasting" feature Item from GR's structured spellcasting summary
- * (`npc.spellcasting.description`) — the same feat-type shape featureItemData()
- * builds for a regular GR feature, so it displays and behaves identically on the
- * Actor sheet. Unlike a regular feature's description, this text comes from a plain
- * textarea on the GR side, not the rich-text editor, so it needs escaping and
- * newline-to-<br> conversion before it's safe as HTML — regular feature descriptions
- * are already HTML and skip this.
+ * Searches every Item-type compendium pack in this world for a document matching
+ * `name` (case-insensitive) and, when given, `type` — returning a clonable plain
+ * item-data object (no `_id`) or null. Unlike resolveCompendiumItem(), which resolves
+ * a specific UUID GR already matched, this does the lookup itself: GR sends no
+ * `compendium_ref` for the spellcasting summary (it isn't one of the stat block's
+ * matched features), so the module finds the game system's own "Spellcasting" feat to
+ * clone rather than only ever hand-building a bare one.
  */
-function spellcastingSummaryItemData(description) {
+async function findCompendiumItemByName(name, type = null) {
+  const target = String(name).trim().toLowerCase();
+  for (const pack of game.packs) {
+    if (pack.documentName !== 'Item') continue;
+    let index;
+    try {
+      index = await pack.getIndex({ fields: ['type'] });
+    } catch (err) {
+      continue;
+    }
+    const entry = index.find(
+      (e) => (e.name || '').toLowerCase() === target && (type === null || e.type === type)
+    );
+    if (entry) {
+      const doc = await pack.getDocument(entry._id);
+      if (doc) {
+        const data = doc.toObject();
+        delete data._id;
+        return data;
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Builds the "Spellcasting" feature Item from GR's structured spellcasting summary
+ * (`npc.spellcasting.description`). Prefers to clone the game system's own
+ * "Spellcasting" feat from a compendium — so it carries whatever the system defines
+ * (icon, subtype, any activities) and looks like a native monster-feature rather than
+ * a bare hand-built one — and overrides only its description with GR's summary text.
+ * Falls back to a plain feat built from scratch when no such compendium entry exists
+ * (e.g. the DM hasn't the system's features pack installed).
+ *
+ * GR's summary is plain textarea text (not the rich-text editor other feature
+ * descriptions use), so it's escaped and newline-converted before being used as HTML.
+ */
+async function spellcastingSummaryItemData(description) {
   const html = escapeHtml(description).replace(/\n/g, '<br>');
+  const cloned = await findCompendiumItemByName('Spellcasting', 'feat');
+  if (cloned) {
+    cloned.system = cloned.system || {};
+    cloned.system.description = { ...(cloned.system.description || {}), value: html };
+    return cloned;
+  }
   return featureItemData({ name: 'Spellcasting', description: html }, null);
 }
 
@@ -944,11 +987,18 @@ async function placeTokensForActor(actor, count, slotOffset, totalInEncounter) {
  *
  * Stage 14: if the payload carries a structured `spellcasting` profile, its ability is
  * set on the Actor, its `description` (if any) becomes a "Spellcasting" feature Item
- * (see `spellcastingSummaryItemData()`), and any exactly-matched `spells` are cloned
- * as real Items alongside the features/items above; see `spellcastingBonuses()` for
- * how a printed DC/attack override is applied, and `applySpellUsage()` for how each
- * spell's `usage_type` (plain slot / Pact Magic / At Will / X-per-day Innate) maps
- * onto Foundry's preparation modes so it lands in the right sheet section.
+ * — cloned from the game system's own "Spellcasting" feat if a compendium has one
+ * (see `spellcastingSummaryItemData()`/`findCompendiumItemByName()`), so it looks
+ * like a native monster feature rather than a bare hand-built one — and any
+ * exactly-matched `spells` are cloned as real Items alongside the features/items
+ * above; see `spellcastingBonuses()` for how a printed DC/attack override is applied,
+ * and `applySpellUsage()` for how each spell's `usage_type` (plain slot / Pact Magic
+ * / At Will / X-per-day Innate) maps onto Foundry's preparation modes so it lands in
+ * the right sheet section. `spellcasting.caster_level` (1-20) sets
+ * `system.details.spellLevel`, dnd5e's automatic spell-slot-table field. Separately,
+ * `npc.saving_throw_proficiencies` (always present, not spellcasting-specific) sets
+ * `abilities.*.proficient` on every ability — explicit per-ability checkboxes on the
+ * GR side, independent of the free-text `saving_throws` line.
  *
  * @param {object} npc - the prepare payload (`GET .../npc/{id}/prepare`'s `npc` field)
  * @param {(msg: string) => void} [onProgress]
@@ -969,7 +1019,7 @@ async function createNpcInFoundry(npc, onProgress, folderId, existingActor, sync
 
   const abilities = {};
   for (const [key, value] of Object.entries(npc.abilities || {})) {
-    abilities[key] = { value };
+    abilities[key] = { value, proficient: npc.saving_throw_proficiencies?.[key] ? 1 : 0 };
   }
 
   const systemData = {
@@ -985,6 +1035,10 @@ async function createNpcInFoundry(npc, onProgress, folderId, existingActor, sync
       alignment: npc.alignment,
       cr: crToDecimal(npc.challenge_rating),
       type: { value: (npc.type || '').toLowerCase(), subtype: npc.subtype || '' },
+      // dnd5e's NPC sheet uses this to auto-compute a standard spell-slot table —
+      // best-effort mapping (not verified against a live world); worth checking the
+      // Actor's spell slots after import.
+      ...(npc.spellcasting?.caster_level ? { spellLevel: npc.spellcasting.caster_level } : {}),
     },
     traits: {
       size: SIZE_MAP[npc.size] || 'med',
@@ -1070,7 +1124,8 @@ async function createNpcInFoundry(npc, onProgress, folderId, existingActor, sync
   // Docs/STATBLOCKS.md "Spell list"), not a bug to work around here.
   if (npc.spellcasting?.description) {
     onProgress?.('Adding spellcasting summary…');
-    await actor.createEmbeddedDocuments('Item', [spellcastingSummaryItemData(npc.spellcasting.description)]);
+    const summaryItemData = await spellcastingSummaryItemData(npc.spellcasting.description);
+    await actor.createEmbeddedDocuments('Item', [summaryItemData]);
   }
 
   // Stage 14: only exact compendium matches are cloned as real spell Items — an

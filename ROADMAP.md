@@ -239,15 +239,14 @@ Encounter), one handout shown to players (imported beforehand via Import Handout
 one table rolled (imported beforehand via Import Roll Tables); edit one section in
 GR, re-import, and confirm only that page rebuilds.
 
-## Stage 14 — Spellcasting fidelity ✅ shipped and confirmed working in a live world (spellcasting-summary feature in v1.6.1, unverified)
+## Stage 14 — Spellcasting fidelity ✅ shipped and confirmed working in a live world (spellcasting-summary feature in v1.6.1/v1.6.2, caster level + save proficiencies in v1.6.3, all three still unverified)
 
-- [ ] **Spellcasting summary imported as a feature (v1.6.1)** — GR's plain-text
-  spellcasting summary (`npc.spellcasting.description`) becomes its own
-  "Spellcasting" feature Item on the Actor, same shape every other GR feature
-  imports as (see `spellcastingSummaryItemData()`) — Foundry's Actor sheet has
-  nowhere else to put this prose. Runs right before spell cloning. If the stat block
-  still has the old free-text "spellcasting" trait too, both Items appear —
-  expected during the transition, not a bug.
+- [ ] **Spellcasting summary imported as a feature (v1.6.1, cloned from a
+  compendium in v1.6.2)** — GR's plain-text spellcasting summary
+  (`npc.spellcasting.description`) becomes its own "Spellcasting" feature Item on
+  the Actor. Foundry's Actor sheet has nowhere else to put this prose. Runs right
+  before spell cloning. If the stat block still has the old free-text "spellcasting"
+  trait too, both Items appear — expected during the transition, not a bug.
   - First live test showed the imported feature not appearing at all — turned out to
     be a **GR-side bug**, not this module's: `FoundryExport::toPreparePayload()`
     only included the whole `spellcasting` object (summary included) when the
@@ -256,6 +255,12 @@ GR, re-import, and confirm only that page rebuilds.
     code never ran. Fixed in GR v1.28.1 — the object is now included whenever
     either `ability` or `description` is present. No module-side code change
     needed; this module's handling of a null/missing `ability` was already correct.
+  - After that fix, the feature *was* importing correctly — but as a bare
+    hand-built feat (`featureItemData()`), not the game system's own "Spellcasting"
+    feat. v1.6.2's `spellcastingSummaryItemData()` now looks that entry up by name
+    across the world's Item-type compendiums first (`findCompendiumItemByName()`)
+    and clones it, overriding only its description with GR's summary — falling back
+    to the bare feat when no such compendium entry exists.
 - [x] When a prepare payload carries GR's structured spell list, match spell names
   against the world's synced spell compendiums and clone matched spells onto the
   created Actor — reuses the same `resolveCompendiumItem()`/`fromUuid()` clone path
@@ -280,7 +285,16 @@ GR, re-import, and confirm only that page rebuilds.
   onto dnd5e's own preparation modes (`always`/`pact`/`atwill`/`innate`) via
   `applySpellUsage()`, plus a best-effort daily-recovery `system.uses` counter for
   `per_day`, so these don't clone in looking like ordinary slot-based spells.
-- [x] **Live verification — ✅ confirmed working in a live world.**
+- [ ] **Spellcaster level + explicit ability save proficiencies (v1.6.3, GR v1.29.0
+  dependency)** — `spellcasting.caster_level` (1-20) sets `system.details.spellLevel`
+  (dnd5e's automatic spell-slot-table field — best-effort schema mapping, not
+  live-verified) and `npc.saving_throw_proficiencies` (six explicit booleans, not
+  spellcasting-specific) sets `abilities.*.proficient` on every ability — something
+  neither the create nor update path ever did before, since the only prior signal
+  (the free-text `saving_throws` line) was never read on the live-connection path at
+  all.
+- [x] **Live verification — ✅ confirmed working in a live world (except the
+  spellcasting-summary feature and this bullet — see their own status above/below).**
 
 **GR dependency:** structured spellcasting on stat blocks (main roadmap 2.6) — ✅
 shipped (GR v1.26.0, usage types included; `description` field for the summary
