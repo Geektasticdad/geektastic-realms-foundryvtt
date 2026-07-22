@@ -248,6 +248,14 @@ GR, re-import, and confirm only that page rebuilds.
   nowhere else to put this prose. Runs right before spell cloning. If the stat block
   still has the old free-text "spellcasting" trait too, both Items appear —
   expected during the transition, not a bug.
+  - First live test showed the imported feature not appearing at all — turned out to
+    be a **GR-side bug**, not this module's: `FoundryExport::toPreparePayload()`
+    only included the whole `spellcasting` object (summary included) when the
+    spellcasting *ability* dropdown was also set, so a stat block with just a
+    summary and no ability chosen yet sent `spellcasting: null` and this module's
+    code never ran. Fixed in GR v1.28.1 — the object is now included whenever
+    either `ability` or `description` is present. No module-side code change
+    needed; this module's handling of a null/missing `ability` was already correct.
 - [x] When a prepare payload carries GR's structured spell list, match spell names
   against the world's synced spell compendiums and clone matched spells onto the
   created Actor — reuses the same `resolveCompendiumItem()`/`fromUuid()` clone path
