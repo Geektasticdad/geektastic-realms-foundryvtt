@@ -239,7 +239,7 @@ Encounter), one handout shown to players (imported beforehand via Import Handout
 one table rolled (imported beforehand via Import Roll Tables); edit one section in
 GR, re-import, and confirm only that page rebuilds.
 
-## Stage 14 — Spellcasting fidelity ✅ shipped (v1.6.0)
+## Stage 14 — Spellcasting fidelity ✅ shipped and confirmed working in a live world
 
 - [x] When a prepare payload carries GR's structured spell list, match spell names
   against the world's synced spell compendiums and clone matched spells onto the
@@ -265,18 +265,14 @@ GR, re-import, and confirm only that page rebuilds.
   onto dnd5e's own preparation modes (`always`/`pact`/`atwill`/`innate`) via
   `applySpellUsage()`, plus a best-effort daily-recovery `system.uses` counter for
   `per_day`, so these don't clone in looking like ordinary slot-based spells.
-- [ ] **Live verification** — hasn't been run against a real Foundry world + GR
-  v1.26.0+ instance yet.
+- [x] **Live verification — ✅ confirmed working in a live world.**
 
 **GR dependency:** structured spellcasting on stat blocks (main roadmap 2.6) — ✅
-shipped (GR v1.26.0, usage types included). **Verification:** on a stat block with a
-spellcasting ability, DC/attack, and a spell list covering all four casting types
-(mixing exact-compendium-match and made-up names), create (then re-sync) its Actor and
-confirm: matched spells appear as real, rollable Items in the correct sheet section
-(Spellcasting / Pact Magic / Innate); the Actor sheet's spell DC/attack read exactly
-what was printed on the stat block; a `per_day` spell shows the right uses count; the
-free-text Spellcasting trait is untouched; unmatched names produce the toast warning
-and nothing else.
+shipped (GR v1.26.0, usage types included). **Verification: ✅ confirmed** — including
+tracking down an early false alarm where two spells reported as unmatched turned out
+to be a Sync Compendiums gap (the world's spell pack had never been ticked/synced, so
+`foundry_compendium_entries` had zero `item_type = 'spell'` rows to match against) —
+once synced, matching and cloning worked as designed.
 
 ## Stage 15 — UX & platform
 
