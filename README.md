@@ -142,8 +142,12 @@ the correct section of the Actor's spellbook based on how the DM tagged it on th
 Geektastic Realms side — ordinary Spellcasting, Pact Magic, or Innate (At Will / X per
 day) — instead of every cloned spell looking like it costs a slot it doesn't. A name
 with no exact match isn't guessed at — it's simply skipped, and a notification tells
-you how many. The stat block's free-text "Spellcasting" trait still imports as a
-regular feature either way, unaffected.
+you how many. If the DM also filled in a plain-text **spellcasting summary** on the
+Geektastic Realms side, it's added as its own "Spellcasting" feature Item (same as any
+other feature). The stat block's free-text "Spellcasting" trait still imports as a
+regular feature either way, unaffected — if both are filled in, you'll see two
+"Spellcasting"-ish features on the Actor until that trait is cleaned up on the
+Geektastic Realms side.
 
 ## Re-syncing an Actor
 

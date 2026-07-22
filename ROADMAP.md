@@ -239,8 +239,15 @@ Encounter), one handout shown to players (imported beforehand via Import Handout
 one table rolled (imported beforehand via Import Roll Tables); edit one section in
 GR, re-import, and confirm only that page rebuilds.
 
-## Stage 14 — Spellcasting fidelity ✅ shipped and confirmed working in a live world
+## Stage 14 — Spellcasting fidelity ✅ shipped and confirmed working in a live world (spellcasting-summary feature in v1.6.1, unverified)
 
+- [ ] **Spellcasting summary imported as a feature (v1.6.1)** — GR's plain-text
+  spellcasting summary (`npc.spellcasting.description`) becomes its own
+  "Spellcasting" feature Item on the Actor, same shape every other GR feature
+  imports as (see `spellcastingSummaryItemData()`) — Foundry's Actor sheet has
+  nowhere else to put this prose. Runs right before spell cloning. If the stat block
+  still has the old free-text "spellcasting" trait too, both Items appear —
+  expected during the transition, not a bug.
 - [x] When a prepare payload carries GR's structured spell list, match spell names
   against the world's synced spell compendiums and clone matched spells onto the
   created Actor — reuses the same `resolveCompendiumItem()`/`fromUuid()` clone path
@@ -268,11 +275,16 @@ GR, re-import, and confirm only that page rebuilds.
 - [x] **Live verification — ✅ confirmed working in a live world.**
 
 **GR dependency:** structured spellcasting on stat blocks (main roadmap 2.6) — ✅
-shipped (GR v1.26.0, usage types included). **Verification: ✅ confirmed** — including
-tracking down an early false alarm where two spells reported as unmatched turned out
-to be a Sync Compendiums gap (the world's spell pack had never been ticked/synced, so
+shipped (GR v1.26.0, usage types included; `description` field for the summary
+feature above in GR v1.28.0). **Verification:** the original ability/DC/attack/spell-
+matching/usage-type behavior is **✅ confirmed** — including tracking down an early
+false alarm where two spells reported as unmatched turned out to be a Sync
+Compendiums gap (the world's spell pack had never been ticked/synced, so
 `foundry_compendium_entries` had zero `item_type = 'spell'` rows to match against) —
-once synced, matching and cloning worked as designed.
+once synced, matching and cloning worked as designed. The v1.6.1 spellcasting-summary
+feature is **not yet verified** live — check that the "Spellcasting" feature Item
+appears with the expected text and doesn't collide oddly with an existing free-text
+trait of the same name.
 
 ## Stage 15 — UX & platform
 

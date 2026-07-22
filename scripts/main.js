@@ -761,6 +761,20 @@ function featureItemData(feature, imgPath) {
 }
 
 /**
+ * Builds a "Spellcasting" feature Item from GR's structured spellcasting summary
+ * (`npc.spellcasting.description`) — the same feat-type shape featureItemData()
+ * builds for a regular GR feature, so it displays and behaves identically on the
+ * Actor sheet. Unlike a regular feature's description, this text comes from a plain
+ * textarea on the GR side, not the rich-text editor, so it needs escaping and
+ * newline-to-<br> conversion before it's safe as HTML — regular feature descriptions
+ * are already HTML and skip this.
+ */
+function spellcastingSummaryItemData(description) {
+  const html = escapeHtml(description).replace(/\n/g, '<br>');
+  return featureItemData({ name: 'Spellcasting', description: html }, null);
+}
+
+/**
  * Foundry item type -> a { value, key } subtype grounded in real Foundry exports
  * (Docs/ROADMAP.md "Stage 7"), not guessed: 'trinket' matches a real trinket export,
  * 'gear' matches a real adventuring-gear export, 'potion' is a direct match since
@@ -929,11 +943,12 @@ async function placeTokensForActor(actor, count, slotOffset, totalInEncounter) {
  * including them in the update payload.
  *
  * Stage 14: if the payload carries a structured `spellcasting` profile, its ability is
- * set on the Actor and any exactly-matched `spells` are cloned as real Items alongside
- * the features/items above; see `spellcastingBonuses()` for how a printed DC/attack
- * override is applied, and `applySpellUsage()` for how each spell's `usage_type`
- * (plain slot / Pact Magic / At Will / X-per-day Innate) maps onto Foundry's
- * preparation modes so it lands in the right sheet section.
+ * set on the Actor, its `description` (if any) becomes a "Spellcasting" feature Item
+ * (see `spellcastingSummaryItemData()`), and any exactly-matched `spells` are cloned
+ * as real Items alongside the features/items above; see `spellcastingBonuses()` for
+ * how a printed DC/attack override is applied, and `applySpellUsage()` for how each
+ * spell's `usage_type` (plain slot / Pact Magic / At Will / X-per-day Innate) maps
+ * onto Foundry's preparation modes so it lands in the right sheet section.
  *
  * @param {object} npc - the prepare payload (`GET .../npc/{id}/prepare`'s `npc` field)
  * @param {(msg: string) => void} [onProgress]
@@ -1045,6 +1060,17 @@ async function createNpcInFoundry(npc, onProgress, folderId, existingActor, sync
       imgPath = await uploadIconToFoundry(items[i].icon_media_id, iconCache);
     }
     await addItemToActor(actor, items[i].compendium_ref, equipmentItemData(items[i], imgPath));
+  }
+
+  // Stage 14 follow-up: the spellcasting summary (GR's plain-text description of
+  // ability/DC/slots/etc.) becomes its own "Spellcasting" feature Item, same as the
+  // free-text spellcasting trait above already does — Foundry's Actor sheet has
+  // nowhere else to put this prose. If a stat block still has the old free-text
+  // trait too, both Items appear; that's expected during the transition (see GR's
+  // Docs/STATBLOCKS.md "Spell list"), not a bug to work around here.
+  if (npc.spellcasting?.description) {
+    onProgress?.('Adding spellcasting summary…');
+    await actor.createEmbeddedDocuments('Item', [spellcastingSummaryItemData(npc.spellcasting.description)]);
   }
 
   // Stage 14: only exact compendium matches are cloned as real spell Items — an

@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.6.1] - 2026-07-22
+
+### Added
+- **Spellcasting summary imported as a feature.** GR v1.28.0 added a plain-text
+  spellcasting summary (e.g. "Eryssa is a 10th-level warlock…") to the structured
+  spellcasting profile — `createNpcInFoundry()` now turns it into its own
+  "Spellcasting" feature Item on the created/re-synced Actor (same feat-type shape
+  every other GR feature imports as), since Foundry's Actor sheet has nowhere else to
+  put this prose. Runs before the spell-cloning step, matching GR's own field order.
+  If a stat block still has the old free-text "spellcasting" trait too, both Items
+  appear on the Actor — expected during the transition to structured spell lists, not
+  a bug to work around. See `spellcastingSummaryItemData()` in `scripts/main.js`.
+
 ## [1.6.0] - 2026-07-22
 
 ### Added
