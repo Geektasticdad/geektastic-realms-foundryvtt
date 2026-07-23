@@ -17,7 +17,7 @@ for the shipped Stages 1–7, and
 [FOUNDRY_API.md](https://github.com/Geektasticdad/geektastic-realms/blob/main/Tech_Docs/FOUNDRY_API.md)
 for the API contract this module talks to.
 
-## Current stage: Stage 14 — Spellcasting fidelity
+## Current stage: Stage 15 — UX & platform
 
 This version registers your Geektastic Realms server URL and API token (Stage 2), syncs
 your world's Item-type compendiums so Geektastic Realms can match stat block features/
@@ -30,18 +30,21 @@ type/subtype and magic-item flag (Stage 7) instead of a generic placeholder, has
 release pipeline (Stage 8) — see [RELEASING.md](RELEASING.md), updates a
 previously-created Actor in place when you re-import it instead of duplicating it
 (Stage 9) — see [Re-syncing an Actor](#re-syncing-an-actor), can deploy a whole
-encounter's adversary roster in one action (Stage 10) — see
-[Deploying an Encounter](#deploying-an-encounter), can import a whole module's
-handouts as one Journal Entry (Stage 11) — see
-[Importing Handouts](#importing-handouts), can import a module's roll tables as
-native, rollable Foundry RollTable documents (Stage 12) — see
-[Importing Roll Tables](#importing-roll-tables), can import a whole module's narrative
-as one Journal Entry (Stage 13, the capstone), with encounter/handout/roll table
-references linked to whatever you've already imported — see
-[Importing an Adventure](#importing-an-adventure), and (Stage 14) clones matched
-spells from a stat block's structured spell list onto its Actor as real, rollable
-spell Items with the right spellcasting ability/DC — see
-[Creating an Actor](#creating-an-actor) below.
+encounter's adversary roster in one action (Stage 10), import a whole module's
+handouts as one Journal Entry (Stage 11), import a module's roll tables as native,
+rollable Foundry RollTable documents (Stage 12), import a whole module's narrative as
+one Journal Entry (Stage 13, the capstone), and (Stage 14) clone matched spells from a
+stat block's structured spell list onto its Actor with the right spellcasting
+ability/DC/level and save proficiencies — see [Creating an Actor](#creating-an-actor),
+[Deploying an Encounter](#deploying-an-encounter),
+[Importing Handouts](#importing-handouts),
+[Importing Roll Tables](#importing-roll-tables), and
+[Importing an Adventure](#importing-an-adventure) below. **Stage 15** moves all five of
+those out of Module Settings into one consolidated, tabbed **import hub** opened from
+a button in the Actors/Journal sidebar header — see
+[Opening the import hub](#opening-the-import-hub) — and gives a stat block its own
+optional prototype token image, separate from its portrait — see
+[Creating an Actor](#creating-an-actor).
 
 ## Requirements
 
@@ -58,7 +61,9 @@ spell Items with the right spellcasting ability/DC — see
   in the prepare payload, so no spell Items are cloned. **v1.28.1+** is needed for
   the spellcasting summary feature to actually import (a bug in v1.28.0 silently
   dropped it whenever no spellcasting ability was set). **v1.29.0+** is needed for
-  spellcaster level and ability save proficiencies to carry over.
+  spellcaster level and ability save proficiencies to carry over. **v1.30.0+** is
+  needed for a stat block's dedicated prototype token image to carry over — older
+  versions still set the Actor's portrait, just never the token.
 
 ## Installation
 
@@ -117,9 +122,19 @@ View, search, and remove synced entries from the **Foundry VTT Connection** pane
 is a read-only mirror of what's in Foundry — to fix a wrong entry, fix it in Foundry and
 re-sync, rather than editing it in Geektastic Realms.
 
+## Opening the import hub
+
+Everything below this point — Creating an Actor, Deploying an Encounter, Importing
+Handouts, Importing Roll Tables, Importing an Adventure — used to be its own entry in
+Module Settings. As of Stage 15 they're all tabs in one window: click the
+**Geektastic Realms** button in the header of the **Actors** or **Journal** sidebar
+tab (either one opens the same window) to open the import hub, then pick the tab for
+what you want to do. Settings now only holds actual configuration: Server URL, API
+Token, Test Connection, and Sync Compendiums.
+
 ## Creating an Actor
 
-In Module Settings, click **Create Actor**. A dialog lists every stat block from your
+The import hub's **Actors** tab lists every stat block from your
 connected Geektastic Realms world — from *any* GR category, not just one named "NPCs"
 (a custom category like "Monsters" or "Villains" works the same way). Type in the
 search box to filter by name, or use the category dropdown to narrow the list to one
@@ -128,8 +143,12 @@ world's Actors-directory folders; leave it on "(No folder)" to create at the roo
 this applies to whichever entry you click Create on next. Click **Create** next to the
 one you want — it appears as a new Actor in your world's Actors tab, in the folder you
 picked. If the entry has a featured image set on the Geektastic Realms side, it's used
-as the created Actor's portrait (not the token image, which stays at Foundry's
-default). Any feature or item you've confirmed a match for on the Geektastic Realms
+as the created Actor's portrait. The prototype token image (Stage 15) is set
+separately — from the stat block's own dedicated **Prototype token image** field if
+the DM set one, or the same featured image used for the portrait otherwise, so a
+freshly-created Actor never lands with Foundry's blank default token unless the entry
+itself has no image at all. Any feature or item you've confirmed a match for on the
+Geektastic Realms
 stat block editor (its **Foundry Compendium** column) is cloned from your compendium
 rather than recreated from scratch — icon included; anything unmatched is built fresh
 from the stat block's own data, picks up a real icon if the DM attached one in the
@@ -172,15 +191,16 @@ button:
 - **↻ Changed, Update** — already created here, but the stat block has been edited
   since — click **Update** to bring it current.
 
-Clicking **Update** rewrites the Actor's stats, portrait, and every feature/item from
-Geektastic Realms' current data — but never touches the Actor's folder, its prototype
-token configuration, ownership, or any active effects you've added at the table. Those
-are yours; Geektastic Realms doesn't manage them. Re-running Create/Update on the same
-entry never produces a second Actor.
+Clicking **Update** rewrites the Actor's stats, portrait, token image (Stage 15), and
+every feature/item from Geektastic Realms' current data — but never touches the
+Actor's folder, ownership, active effects, or any prototype token setting *other than*
+its image (position, scale, disposition, vision, etc. are all left as you've set them
+at the table). Re-running Create/Update on the same entry never produces a second
+Actor.
 
 ## Deploying an Encounter
 
-In Module Settings, click **Deploy Encounter**. Pick a **Module** from the dropdown,
+In the import hub's **Encounters** tab. Pick a **Module** from the dropdown,
 and every encounter in it appears below — name, type, difficulty, which section it's
 in, and its full adversary roster (e.g. "3× Goblin, 1× Goblin Boss") right in the list,
 so you can see what you're about to deploy before committing to anything.
@@ -211,7 +231,7 @@ combatant by hand.
 
 ## Importing Handouts
 
-In Module Settings, click **Import Handouts**. Pick a **Module** from the dropdown,
+In the import hub's **Handouts** tab. Pick a **Module** from the dropdown,
 and every handout in it appears below with a status — **New**, **✓ Up to date**, or
 **↻ Changed** — so you can see what's about to happen before clicking anything.
 
@@ -229,7 +249,7 @@ native **Show to Players** on any page at the table — that's the whole point.
 
 ## Importing Roll Tables
 
-In Module Settings, click **Import Roll Tables**. Pick a **Module** from the
+In the import hub's **Tables** tab. Pick a **Module** from the
 dropdown, and every roll table in it appears below — die size, row count, which
 section it's in, and a status (**New**, **✓ Up to date**, or **↻ Changed**).
 
@@ -255,7 +275,7 @@ dice, real chat output, no need to open Geektastic Realms mid-session.
 tables you want linked; it composes what they already built rather than creating
 anything new itself.*
 
-In Module Settings, click **Import Adventure**. Pick a **Module** from the dropdown
+In the import hub's **Adventure** tab. Pick a **Module** from the dropdown
 and you'll see its title, summary, and how many sections it has, then click
 **Import Adventure**.
 
@@ -290,11 +310,13 @@ session straight from Foundry.
   `scripts/main.js` directly and reload Foundry to test changes.
 - Built against the classic `FormApplication`/`Application` v1 API rather than v13's
   newer `ApplicationV2` — v1 remains supported via Foundry's compatibility layer and is
-  the better-documented, less version-fragile choice for a module this small. All three
-  dialogs extend a `FormApplicationBase` constant (`scripts/main.js`) that resolves to
+  the better-documented, less version-fragile choice for a module this small. Every
+  dialog (`TestConnectionForm`, `CompendiumSyncForm`, and the tabbed `ImportHubForm`)
+  extends a `FormApplicationBase` constant (`scripts/main.js`) that resolves to
   `foundry.appv1.api.FormApplication` if present, falling back to the bare
   `FormApplication` global otherwise — covers both v13 variants without needing to know
-  ahead of time which one a given build exposes.
+  ahead of time which one a given build exposes. `ImportHubForm`'s tabs use
+  `Application`'s own built-in `options.tabs` support, not a custom implementation.
 - The `syncPacks` world setting (your saved pack selection) is intentionally not in the
   visible Module Settings list (`config: false`) — it's managed entirely through the
   Sync Compendiums dialog's checkboxes.

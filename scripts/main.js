@@ -859,13 +859,15 @@ function equipmentItemData(item, imgPath) {
 }
 
 /**
- * Populates a module <select> from the connected GR world — shared by the Deploy
- * Encounter (Stage 10) and Import Handouts (Stage 11) pickers, which both start with
- * "pick a module" before showing anything module-specific.
+ * Populates a module <select> from the connected GR world — shared by every "pick a
+ * module first" tab in the Import Hub (Stage 15: Encounters, Handouts, Tables,
+ * Adventure). `resultPromise`, if given, is used instead of starting a fresh
+ * `fetchModuleList()` — the hub opens all four of those tabs at once and passes the
+ * same in-flight promise to each, so the module list is fetched once, not four times.
  * @returns {Promise<boolean>} true if at least one module was loaded
  */
-async function populateModuleSelect(select, status, emptyMessage, readyMessage) {
-  const result = await fetchModuleList();
+async function populateModuleSelect(select, status, emptyMessage, readyMessage, resultPromise = null) {
+  const result = await (resultPromise ?? fetchModuleList());
   if (!result.ok) {
     status.text(`✘ ${result.error}`).css('color', '#c62828');
     return false;
@@ -981,9 +983,11 @@ async function placeTokensForActor(actor, count, slotOffset, totalInEncounter) {
  * then clears and rebuilds every embedded Item from GR's current data — the same
  * convergent rebuild the create path does, so re-syncing after a GR edit always
  * matches GR exactly rather than merging or drifting. It deliberately does **not**
- * touch the Actor's folder, prototype token config, ownership, or active effects —
- * those are Foundry-side state GR has no opinion on, left alone by simply never
- * including them in the update payload.
+ * touch the Actor's folder, ownership, active effects, or prototype token config
+ * beyond its texture (Stage 15: `prototypeToken.texture.src`, from `token_media_id` —
+ * a merge-update, so disposition/scale/ring/etc. are untouched) — those are
+ * Foundry-side state GR has no opinion on, left alone by simply never including them
+ * in the update payload.
  *
  * Stage 14: if the payload carries a structured `spellcasting` profile, its ability is
  * set on the Actor, its `description` (if any) becomes a "Spellcasting" feature Item
@@ -1015,6 +1019,17 @@ async function createNpcInFoundry(npc, onProgress, folderId, existingActor, sync
   if (npc.portrait_media_id) {
     onProgress?.('Uploading portrait…');
     portraitPath = await uploadIconToFoundry(npc.portrait_media_id, iconCache);
+  }
+
+  // Stage 15: npc.token_media_id is already GR's resolved choice (the stat block's own
+  // token image, or the entry's featured image as a fallback — see
+  // FoundryExport::toPreparePayload()) — no fallback logic needed here. When it's the
+  // same media id as the portrait (the common no-dedicated-token-image case),
+  // uploadIconToFoundry()'s shared iconCache means this doesn't re-upload the file.
+  let tokenPath = null;
+  if (npc.token_media_id) {
+    onProgress?.('Uploading token image…');
+    tokenPath = await uploadIconToFoundry(npc.token_media_id, iconCache);
   }
 
   const abilities = {};
@@ -1072,6 +1087,7 @@ async function createNpcInFoundry(npc, onProgress, folderId, existingActor, sync
     await existingActor.update({
       name: npc.name,
       ...(portraitPath ? { img: portraitPath } : {}),
+      ...(tokenPath ? { prototypeToken: { texture: { src: tokenPath } } } : {}),
       ...(flags ? { flags } : {}),
       system: systemData,
     });
@@ -1089,6 +1105,7 @@ async function createNpcInFoundry(npc, onProgress, folderId, existingActor, sync
       type: 'npc',
       folder: folderId || null,
       ...(portraitPath ? { img: portraitPath } : {}),
+      ...(tokenPath ? { prototypeToken: { texture: { src: tokenPath } } } : {}),
       ...(flags ? { flags } : {}),
       system: systemData,
     });
@@ -1306,20 +1323,37 @@ class CompendiumSyncForm extends FormApplicationBase {
 }
 
 /**
- * Lists stat-block-bearing entries available in the connected GR world — from *any*
- * GR category, not just one literally named "NPCs" — and creates one as a real Actor
- * here on request (Stage 5) — a "pull" model, so GR never needs this Foundry instance
- * to be reachable over the network; the module only ever calls out to GR.
+ * The Geektastic Realms import hub (Stage 15) — one consolidated window replacing the
+ * five separate dialogs Stages 5/10/11/12/13 used to register as their own Module
+ * Settings menu entries (Create Actor, Deploy Encounter, Import Handouts, Import Roll
+ * Tables, Import Adventure). Reachable from a Geektastic Realms button in the Actors
+ * and Journal directory headers (see the renderActorDirectory/renderJournalDirectory
+ * hooks below) rather than Settings — these are things a DM clicks repeatedly through
+ * a session, not one-time configuration, so Settings now only holds Server URL/API
+ * Token/Test Connection/Sync Compendiums, which really are settings.
+ *
+ * Uses FormApplicationBase's native tab support (`options.tabs`, wired up for free by
+ * the base class's own activateListeners()) instead of five separate windows. Every
+ * tab's markup and behavior is the exact same code the five original dialogs had —
+ * only the outer shell changed, so this should behave identically to before, just
+ * reachable from one place with five tabs instead of five menu entries. Each tab's DOM
+ * queries are scoped to that tab's own container (a `tab` jQuery element passed into
+ * every method below), never the whole dialog — several tabs reuse the same class
+ * names (e.g. `.grfc-module-select` appears in four different tabs), so scoping is
+ * what keeps them from colliding now that they all live in one document at once
+ * (classic Application tabs hide inactive panels with CSS, not by removing them from
+ * the DOM, so all five tabs' elements exist simultaneously, even hidden).
  */
-class CreateNpcForm extends FormApplicationBase {
+class ImportHubForm extends FormApplicationBase {
   static get defaultOptions() {
     return foundry.utils.mergeObject(super.defaultOptions, {
-      id: 'grfc-create-npc',
-      title: 'Geektastic Realms — Create Actor',
-      width: 640,
-      height: 600,
+      id: 'grfc-import-hub',
+      title: 'Geektastic Realms',
+      width: 680,
+      height: 640,
       closeOnSubmit: false,
       resizable: true,
+      tabs: [{ navSelector: '.grfc-hub-tabs', contentSelector: '.grfc-hub-content', initial: 'actors' }],
     });
   }
 
@@ -1329,39 +1363,90 @@ class CreateNpcForm extends FormApplicationBase {
 
   async _renderInner() {
     const html = `
-      <form class="grfc-create-npc" style="padding:.5rem;">
-        <div style="display:flex; gap:.5rem; margin-bottom:.5rem;">
-          <input type="text" class="grfc-npc-search" placeholder="Search by name…"
-            style="flex:1 1 auto;min-width:0;box-sizing:border-box;" disabled>
-          <select class="grfc-category-filter" style="flex:0 0 auto;" disabled>
-            <option value="">All categories</option>
-          </select>
-        </div>
-        <div style="display:flex; align-items:center; gap:.5rem; margin-bottom:.5rem;">
-          <label style="white-space:nowrap;color:var(--color-text-dark-secondary,#666);font-size:.85em;">Create in folder:</label>
-          <select class="grfc-folder-select" style="flex:1 1 auto;min-width:0;">
-            <option value="">(No folder)</option>
-          </select>
-        </div>
-        <p id="grfc-npc-status" style="color:var(--color-text-dark-secondary,#666);margin:.25rem 0 .5rem;">Loading actors…</p>
-        <ul class="grfc-npc-list" style="list-style:none;margin:0;padding:0;height:450px;overflow-y:auto"></ul>
+      <form class="grfc-import-hub" style="display:flex;flex-direction:column;height:100%;box-sizing:border-box;">
+        <style>
+          /* Defensive fallback in case core Foundry CSS doesn't reach this dialog for
+             some reason — without this, an inactive tab showing would stack all five
+             panels' content at once instead of switching between them. */
+          .grfc-import-hub .tab:not(.active) { display: none; }
+        </style>
+        <nav class="grfc-hub-tabs tabs" data-group="primary" style="flex:0 0 auto;">
+          <a class="item" data-tab="actors"><i class="fas fa-user-plus"></i> Actors</a>
+          <a class="item" data-tab="encounters"><i class="fas fa-people-group"></i> Encounters</a>
+          <a class="item" data-tab="handouts"><i class="fas fa-book-open"></i> Handouts</a>
+          <a class="item" data-tab="tables"><i class="fas fa-dice-d20"></i> Tables</a>
+          <a class="item" data-tab="adventure"><i class="fas fa-scroll"></i> Adventure</a>
+        </nav>
+        <section class="grfc-hub-content" style="flex:1 1 auto;overflow:hidden;padding-top:.5rem;">
+          <div class="tab" data-tab="actors" data-group="primary" style="height:100%;display:flex;flex-direction:column;box-sizing:border-box;padding:0 .25rem;">
+            ${this._actorsTabHtml()}
+          </div>
+          <div class="tab" data-tab="encounters" data-group="primary" style="height:100%;display:flex;flex-direction:column;box-sizing:border-box;padding:0 .25rem;">
+            ${this._encountersTabHtml()}
+          </div>
+          <div class="tab" data-tab="handouts" data-group="primary" style="height:100%;display:flex;flex-direction:column;box-sizing:border-box;padding:0 .25rem;">
+            ${this._handoutsTabHtml()}
+          </div>
+          <div class="tab" data-tab="tables" data-group="primary" style="height:100%;display:flex;flex-direction:column;box-sizing:border-box;padding:0 .25rem;">
+            ${this._tablesTabHtml()}
+          </div>
+          <div class="tab" data-tab="adventure" data-group="primary" style="height:100%;display:flex;flex-direction:column;box-sizing:border-box;padding:0 .25rem;">
+            ${this._adventureTabHtml()}
+          </div>
+        </section>
       </form>
     `;
     return $(html);
   }
 
   activateListeners(html) {
-    super.activateListeners(html);
-    this._loadList(html);
-    this._populateFolders(html);
+    super.activateListeners(html); // wires up tab-switching via options.tabs above
 
-    html.find('.grfc-npc-search').on('input', () => this._applyFilters(html));
-    html.find('.grfc-category-filter').on('change', () => this._applyFilters(html));
+    // One shared modules fetch — Encounters/Handouts/Tables/Adventure all start with
+    // "pick a module," so this avoids four independent GET .../modules calls firing
+    // the instant the hub opens; populateModuleSelect() awaits this same promise four
+    // times instead of each starting its own fetch.
+    const modulesPromise = fetchModuleList();
+
+    this._actorsActivate(html.find('[data-tab="actors"]'));
+    this._encountersActivate(html.find('[data-tab="encounters"]'), modulesPromise);
+    this._handoutsActivate(html.find('[data-tab="handouts"]'), modulesPromise);
+    this._tablesActivate(html.find('[data-tab="tables"]'), modulesPromise);
+    this._adventureActivate(html.find('[data-tab="adventure"]'), modulesPromise);
+  }
+
+  // ── Actors (Stage 5/9: create/re-sync an Actor from any GR stat block) ──────
+
+  _actorsTabHtml() {
+    return `
+      <div style="display:flex; gap:.5rem; margin-bottom:.5rem;">
+        <input type="text" class="grfc-npc-search" placeholder="Search by name…"
+          style="flex:1 1 auto;min-width:0;box-sizing:border-box;" disabled>
+        <select class="grfc-category-filter" style="flex:0 0 auto;" disabled>
+          <option value="">All categories</option>
+        </select>
+      </div>
+      <div style="display:flex; align-items:center; gap:.5rem; margin-bottom:.5rem;">
+        <label style="white-space:nowrap;color:var(--color-text-dark-secondary,#666);font-size:.85em;">Create in folder:</label>
+        <select class="grfc-folder-select" style="flex:1 1 auto;min-width:0;">
+          <option value="">(No folder)</option>
+        </select>
+      </div>
+      <p id="grfc-npc-status" style="color:var(--color-text-dark-secondary,#666);margin:.25rem 0 .5rem;">Loading actors…</p>
+      <ul class="grfc-npc-list" style="list-style:none;margin:0;padding:0;flex:1 1 auto;overflow-y:auto"></ul>
+    `;
+  }
+
+  _actorsActivate(tab) {
+    this._actorsLoadList(tab);
+    this._actorsPopulateFolders(tab);
+    tab.find('.grfc-npc-search').on('input', () => this._actorsApplyFilters(tab));
+    tab.find('.grfc-category-filter').on('change', () => this._actorsApplyFilters(tab));
   }
 
   /** Populates the target-folder dropdown from this world's Actor folders — purely local, no GR round-trip needed. */
-  _populateFolders(html) {
-    const select = html.find('.grfc-folder-select');
+  _actorsPopulateFolders(tab) {
+    const select = tab.find('.grfc-folder-select');
     const folders = game.folders
       .filter((f) => f.type === 'Actor')
       .map((f) => ({ id: f.id, name: f.name, depth: f.depth || 1 }))
@@ -1373,10 +1458,10 @@ class CreateNpcForm extends FormApplicationBase {
     });
   }
 
-  _applyFilters(html) {
-    const query = html.find('.grfc-npc-search').val().trim().toLowerCase();
-    const category = html.find('.grfc-category-filter').val();
-    const rows = html.find('.grfc-npc-list > li');
+  _actorsApplyFilters(tab) {
+    const query = tab.find('.grfc-npc-search').val().trim().toLowerCase();
+    const category = tab.find('.grfc-category-filter').val();
+    const rows = tab.find('.grfc-npc-list > li');
     let visible = 0;
 
     rows.each((_, el) => {
@@ -1391,16 +1476,16 @@ class CreateNpcForm extends FormApplicationBase {
     const filters = [];
     if (query) filters.push(`name matches "${query}"`);
     if (category) filters.push(`category is "${category}"`);
-    html.find('#grfc-npc-status').text(
+    tab.find('#grfc-npc-status').text(
       filters.length === 0 ? `${total} available — click Create to build one here.` : `${visible} of ${total} match (${filters.join(', ')}).`
     );
   }
 
-  async _loadList(html) {
-    const status = html.find('#grfc-npc-status');
-    const list = html.find('.grfc-npc-list');
-    const search = html.find('.grfc-npc-search');
-    const categoryFilter = html.find('.grfc-category-filter');
+  async _actorsLoadList(tab) {
+    const status = tab.find('#grfc-npc-status');
+    const list = tab.find('.grfc-npc-list');
+    const search = tab.find('.grfc-npc-search');
+    const categoryFilter = tab.find('.grfc-category-filter');
 
     const result = await fetchNpcList();
     if (!result.ok) {
@@ -1462,7 +1547,7 @@ class CreateNpcForm extends FormApplicationBase {
         }
 
         try {
-          const folderId = html.find('.grfc-folder-select').val();
+          const folderId = tab.find('.grfc-folder-select').val();
           const syncInfo = { entryId: npc.entry_id, contentHash: prepared.body.content_hash };
           rowActor = await createNpcInFoundry(prepared.body.npc, (msg) => rowStatus.text(msg), folderId, rowActor, syncInfo);
 
@@ -1482,78 +1567,49 @@ class CreateNpcForm extends FormApplicationBase {
       list.append(li);
     });
   }
-}
 
-/**
- * Deploys a whole GR encounter's adversary roster into Foundry in one action
- * (Stage 10) — pick a module, then one of its encounters, and every adversary's
- * Actor is created-or-updated (reusing the Stage 9 pipeline) into an
- * `Encounters/{name}` folder, optionally with a Foundry Combat pre-populated with
- * one combatant per quantity (an "unlinked" combatant — actorId only, no placed
- * token — the same shape Foundry's own Combat Tracker "add non-token combatant"
- * flow produces; the DM drags tokens onto the scene later and the tracker links
- * them up). A failure on one adversary doesn't abort the rest — this deploys as
- * much of the roster as it can rather than being all-or-nothing.
- */
-class ImportEncounterForm extends FormApplicationBase {
-  static get defaultOptions() {
-    return foundry.utils.mergeObject(super.defaultOptions, {
-      id: 'grfc-import-encounter',
-      title: 'Geektastic Realms — Deploy Encounter',
-      width: 640,
-      height: 600,
-      closeOnSubmit: false,
-      resizable: true,
-    });
-  }
+  // ── Encounters (Stage 10: deploy a whole encounter roster) ──────────────────
 
-  getData() {
-    return {};
-  }
-
-  async _renderInner() {
-    const html = `
-      <form class="grfc-import-encounter" style="padding:.5rem;display:flex;flex-direction:column;height:100%;box-sizing:border-box;">
-        <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.5rem;">
-          <label style="white-space:nowrap;color:var(--color-text-dark-secondary,#666);font-size:.85em;">Module:</label>
-          <select class="grfc-module-select" style="flex:1 1 auto;min-width:0;" disabled>
-            <option value="">Loading modules…</option>
-          </select>
-        </div>
-        <label style="display:flex;align-items:center;gap:.4rem;margin-bottom:.3rem;font-size:.9em;">
-          <input type="checkbox" class="grfc-place-tokens" checked>
-          Place tokens on the current scene (one per creature)
-        </label>
-        <label style="display:flex;align-items:center;gap:.4rem;margin-bottom:.5rem;font-size:.9em;">
-          <input type="checkbox" class="grfc-create-combat" checked>
-          Also create a Combat encounter, linked to the placed tokens
-        </label>
-        <p id="grfc-encounter-status" style="color:var(--color-text-dark-secondary,#666);margin:.25rem 0 .5rem;">Loading modules…</p>
-        <ul class="grfc-encounter-list" style="list-style:none;margin:0;padding:0;flex:1 1 auto;overflow-y:auto"></ul>
-      </form>
+  _encountersTabHtml() {
+    return `
+      <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.5rem;">
+        <label style="white-space:nowrap;color:var(--color-text-dark-secondary,#666);font-size:.85em;">Module:</label>
+        <select class="grfc-module-select" style="flex:1 1 auto;min-width:0;" disabled>
+          <option value="">Loading modules…</option>
+        </select>
+      </div>
+      <label style="display:flex;align-items:center;gap:.4rem;margin-bottom:.3rem;font-size:.9em;">
+        <input type="checkbox" class="grfc-place-tokens" checked>
+        Place tokens on the current scene (one per creature)
+      </label>
+      <label style="display:flex;align-items:center;gap:.4rem;margin-bottom:.5rem;font-size:.9em;">
+        <input type="checkbox" class="grfc-create-combat" checked>
+        Also create a Combat encounter, linked to the placed tokens
+      </label>
+      <p id="grfc-encounter-status" style="color:var(--color-text-dark-secondary,#666);margin:.25rem 0 .5rem;">Loading modules…</p>
+      <ul class="grfc-encounter-list" style="list-style:none;margin:0;padding:0;flex:1 1 auto;overflow-y:auto"></ul>
     `;
-    return $(html);
   }
 
-  activateListeners(html) {
-    super.activateListeners(html);
-    this._loadModules(html);
-    html.find('.grfc-module-select').on('change', () => this._loadEncounters(html));
+  _encountersActivate(tab, modulesPromise) {
+    this._encountersLoadModules(tab, modulesPromise);
+    tab.find('.grfc-module-select').on('change', () => this._encountersLoadList(tab));
   }
 
-  async _loadModules(html) {
+  async _encountersLoadModules(tab, modulesPromise) {
     await populateModuleSelect(
-      html.find('.grfc-module-select'),
-      html.find('#grfc-encounter-status'),
+      tab.find('.grfc-module-select'),
+      tab.find('#grfc-encounter-status'),
       'No adventure modules found in this Geektastic Realms world.',
-      'Choose a module to see its encounters.'
+      'Choose a module to see its encounters.',
+      modulesPromise
     );
   }
 
-  async _loadEncounters(html) {
-    const moduleId = html.find('.grfc-module-select').val();
-    const list = html.find('.grfc-encounter-list');
-    const status = html.find('#grfc-encounter-status');
+  async _encountersLoadList(tab) {
+    const moduleId = tab.find('.grfc-module-select').val();
+    const list = tab.find('.grfc-encounter-list');
+    const status = tab.find('#grfc-encounter-status');
     list.empty();
 
     if (!moduleId) {
@@ -1613,8 +1669,8 @@ class ImportEncounterForm extends FormApplicationBase {
           return;
         }
 
-        const placeTokens = html.find('.grfc-place-tokens').is(':checked');
-        const createCombat = html.find('.grfc-create-combat').is(':checked');
+        const placeTokens = tab.find('.grfc-place-tokens').is(':checked');
+        const createCombat = tab.find('.grfc-create-combat').is(':checked');
         const preparedAdversaries = prepared.body.adversaries || [];
         const folderId = await findOrCreateEncounterFolder(prepared.body.encounter?.name || encounter.name);
 
@@ -1701,70 +1757,45 @@ class ImportEncounterForm extends FormApplicationBase {
       list.append(li);
     });
   }
-}
 
-/**
- * Imports every handout in a module as pages of one Journal Entry (Stage 11) — pick
- * a module, preview which handouts are New / Up to date / Changed, and click
- * **Import Handouts** once to bring the whole set current in a single action (unlike
- * Deploy Encounter, this is one journal per module, not one action per item, so
- * there's a single button rather than a per-row one).
- */
-class ImportHandoutsForm extends FormApplicationBase {
-  static get defaultOptions() {
-    return foundry.utils.mergeObject(super.defaultOptions, {
-      id: 'grfc-import-handouts',
-      title: 'Geektastic Realms — Import Handouts',
-      width: 640,
-      height: 600,
-      closeOnSubmit: false,
-      resizable: true,
-    });
-  }
+  // ── Handouts (Stage 11: import a module's handouts as Journal pages) ────────
 
-  getData() {
-    return {};
-  }
-
-  async _renderInner() {
-    const html = `
-      <form class="grfc-import-handouts" style="padding:.5rem;display:flex;flex-direction:column;height:100%;box-sizing:border-box;">
-        <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.5rem;">
-          <label style="white-space:nowrap;color:var(--color-text-dark-secondary,#666);font-size:.85em;">Module:</label>
-          <select class="grfc-module-select" style="flex:1 1 auto;min-width:0;" disabled>
-            <option value="">Loading modules…</option>
-          </select>
-        </div>
-        <p id="grfc-handouts-status" style="color:var(--color-text-dark-secondary,#666);margin:.25rem 0 .5rem;">Loading modules…</p>
-        <ul class="grfc-handouts-list" style="list-style:none;margin:0;padding:0;flex:1 1 auto;overflow-y:auto"></ul>
-        <button type="button" class="grfc-import-handouts-btn" style="margin-top:.5rem;" disabled>Import Handouts</button>
-      </form>
+  _handoutsTabHtml() {
+    return `
+      <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.5rem;">
+        <label style="white-space:nowrap;color:var(--color-text-dark-secondary,#666);font-size:.85em;">Module:</label>
+        <select class="grfc-module-select" style="flex:1 1 auto;min-width:0;" disabled>
+          <option value="">Loading modules…</option>
+        </select>
+      </div>
+      <p id="grfc-handouts-status" style="color:var(--color-text-dark-secondary,#666);margin:.25rem 0 .5rem;">Loading modules…</p>
+      <ul class="grfc-handouts-list" style="list-style:none;margin:0;padding:0;flex:1 1 auto;overflow-y:auto"></ul>
+      <button type="button" class="grfc-import-handouts-btn" style="margin-top:.5rem;" disabled>Import Handouts</button>
     `;
-    return $(html);
   }
 
-  activateListeners(html) {
-    super.activateListeners(html);
-    this._loadModules(html);
-    html.find('.grfc-module-select').on('change', () => this._loadHandouts(html));
-    html.find('.grfc-import-handouts-btn').on('click', () => this._doImport(html));
+  _handoutsActivate(tab, modulesPromise) {
+    this._handoutsLoadModules(tab, modulesPromise);
+    tab.find('.grfc-module-select').on('change', () => this._handoutsLoadList(tab));
+    tab.find('.grfc-import-handouts-btn').on('click', () => this._handoutsDoImport(tab));
   }
 
-  async _loadModules(html) {
+  async _handoutsLoadModules(tab, modulesPromise) {
     await populateModuleSelect(
-      html.find('.grfc-module-select'),
-      html.find('#grfc-handouts-status'),
+      tab.find('.grfc-module-select'),
+      tab.find('#grfc-handouts-status'),
       'No adventure modules found in this Geektastic Realms world.',
-      'Choose a module to see its handouts.'
+      'Choose a module to see its handouts.',
+      modulesPromise
     );
   }
 
-  async _loadHandouts(html) {
-    const select = html.find('.grfc-module-select');
+  async _handoutsLoadList(tab) {
+    const select = tab.find('.grfc-module-select');
     const moduleId = select.val();
-    const list = html.find('.grfc-handouts-list');
-    const status = html.find('#grfc-handouts-status');
-    const importBtn = html.find('.grfc-import-handouts-btn');
+    const list = tab.find('.grfc-handouts-list');
+    const status = tab.find('#grfc-handouts-status');
+    const importBtn = tab.find('.grfc-import-handouts-btn');
     list.empty();
     importBtn.prop('disabled', true);
 
@@ -1809,12 +1840,12 @@ class ImportHandoutsForm extends FormApplicationBase {
     importBtn.prop('disabled', false);
   }
 
-  async _doImport(html) {
-    const select = html.find('.grfc-module-select');
+  async _handoutsDoImport(tab) {
+    const select = tab.find('.grfc-module-select');
     const moduleId = select.val();
     const moduleTitle = select.find('option:selected').text();
-    const status = html.find('#grfc-handouts-status');
-    const importBtn = html.find('.grfc-import-handouts-btn');
+    const status = tab.find('#grfc-handouts-status');
+    const importBtn = tab.find('.grfc-import-handouts-btn');
     if (!moduleId) return;
 
     importBtn.prop('disabled', true);
@@ -1851,71 +1882,46 @@ class ImportHandoutsForm extends FormApplicationBase {
 
     journal?.sheet?.render(true);
     importBtn.prop('disabled', false);
-    await this._loadHandouts(html);
-  }
-}
-
-/**
- * Imports a module's roll tables as native Foundry RollTable documents (Stage 12) —
- * pick a module, preview which tables are New / Up to date / Changed, and click
- * **Import Roll Tables** once to bring the whole set current. Once native, a DM
- * rolls them with Foundry's own dice + chat output — no GR run view needed
- * mid-session.
- */
-class ImportRollTablesForm extends FormApplicationBase {
-  static get defaultOptions() {
-    return foundry.utils.mergeObject(super.defaultOptions, {
-      id: 'grfc-import-roll-tables',
-      title: 'Geektastic Realms — Import Roll Tables',
-      width: 640,
-      height: 600,
-      closeOnSubmit: false,
-      resizable: true,
-    });
+    await this._handoutsLoadList(tab);
   }
 
-  getData() {
-    return {};
-  }
+  // ── Tables (Stage 12: import a module's roll tables as native RollTables) ───
 
-  async _renderInner() {
-    const html = `
-      <form class="grfc-import-roll-tables" style="padding:.5rem;display:flex;flex-direction:column;height:100%;box-sizing:border-box;">
-        <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.5rem;">
-          <label style="white-space:nowrap;color:var(--color-text-dark-secondary,#666);font-size:.85em;">Module:</label>
-          <select class="grfc-module-select" style="flex:1 1 auto;min-width:0;" disabled>
-            <option value="">Loading modules…</option>
-          </select>
-        </div>
-        <p id="grfc-roll-tables-status" style="color:var(--color-text-dark-secondary,#666);margin:.25rem 0 .5rem;">Loading modules…</p>
-        <ul class="grfc-roll-tables-list" style="list-style:none;margin:0;padding:0;flex:1 1 auto;overflow-y:auto"></ul>
-        <button type="button" class="grfc-import-roll-tables-btn" style="margin-top:.5rem;" disabled>Import Roll Tables</button>
-      </form>
+  _tablesTabHtml() {
+    return `
+      <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.5rem;">
+        <label style="white-space:nowrap;color:var(--color-text-dark-secondary,#666);font-size:.85em;">Module:</label>
+        <select class="grfc-module-select" style="flex:1 1 auto;min-width:0;" disabled>
+          <option value="">Loading modules…</option>
+        </select>
+      </div>
+      <p id="grfc-roll-tables-status" style="color:var(--color-text-dark-secondary,#666);margin:.25rem 0 .5rem;">Loading modules…</p>
+      <ul class="grfc-roll-tables-list" style="list-style:none;margin:0;padding:0;flex:1 1 auto;overflow-y:auto"></ul>
+      <button type="button" class="grfc-import-roll-tables-btn" style="margin-top:.5rem;" disabled>Import Roll Tables</button>
     `;
-    return $(html);
   }
 
-  activateListeners(html) {
-    super.activateListeners(html);
-    this._loadModules(html);
-    html.find('.grfc-module-select').on('change', () => this._loadRollTables(html));
-    html.find('.grfc-import-roll-tables-btn').on('click', () => this._doImport(html));
+  _tablesActivate(tab, modulesPromise) {
+    this._tablesLoadModules(tab, modulesPromise);
+    tab.find('.grfc-module-select').on('change', () => this._tablesLoadList(tab));
+    tab.find('.grfc-import-roll-tables-btn').on('click', () => this._tablesDoImport(tab));
   }
 
-  async _loadModules(html) {
+  async _tablesLoadModules(tab, modulesPromise) {
     await populateModuleSelect(
-      html.find('.grfc-module-select'),
-      html.find('#grfc-roll-tables-status'),
+      tab.find('.grfc-module-select'),
+      tab.find('#grfc-roll-tables-status'),
       'No adventure modules found in this Geektastic Realms world.',
-      'Choose a module to see its roll tables.'
+      'Choose a module to see its roll tables.',
+      modulesPromise
     );
   }
 
-  async _loadRollTables(html) {
-    const moduleId = html.find('.grfc-module-select').val();
-    const list = html.find('.grfc-roll-tables-list');
-    const status = html.find('#grfc-roll-tables-status');
-    const importBtn = html.find('.grfc-import-roll-tables-btn');
+  async _tablesLoadList(tab) {
+    const moduleId = tab.find('.grfc-module-select').val();
+    const list = tab.find('.grfc-roll-tables-list');
+    const status = tab.find('#grfc-roll-tables-status');
+    const importBtn = tab.find('.grfc-import-roll-tables-btn');
     list.empty();
     importBtn.prop('disabled', true);
 
@@ -1960,10 +1966,10 @@ class ImportRollTablesForm extends FormApplicationBase {
     importBtn.prop('disabled', false);
   }
 
-  async _doImport(html) {
-    const moduleId = html.find('.grfc-module-select').val();
-    const status = html.find('#grfc-roll-tables-status');
-    const importBtn = html.find('.grfc-import-roll-tables-btn');
+  async _tablesDoImport(tab) {
+    const moduleId = tab.find('.grfc-module-select').val();
+    const status = tab.find('#grfc-roll-tables-status');
+    const importBtn = tab.find('.grfc-import-roll-tables-btn');
     if (!moduleId) return;
 
     importBtn.prop('disabled', true);
@@ -2016,71 +2022,46 @@ class ImportRollTablesForm extends FormApplicationBase {
     }
 
     importBtn.prop('disabled', false);
-    await this._loadRollTables(html);
-  }
-}
-
-/**
- * Imports a whole module as one structured Journal Entry (Stage 13, the capstone
- * composing Stages 9–12) — pick a module, review the preview (title, summary,
- * section count), and click **Import Adventure** once. Unlike the other pickers
- * this is a single module-wide action with nothing per-row to click — see
- * `importAdventure()` for what actually happens.
- */
-class ImportAdventureForm extends FormApplicationBase {
-  static get defaultOptions() {
-    return foundry.utils.mergeObject(super.defaultOptions, {
-      id: 'grfc-import-adventure',
-      title: 'Geektastic Realms — Import Adventure',
-      width: 640,
-      height: 480,
-      closeOnSubmit: false,
-      resizable: true,
-    });
+    await this._tablesLoadList(tab);
   }
 
-  getData() {
-    return {};
-  }
+  // ── Adventure (Stage 13: import a whole module as one structured Journal) ───
 
-  async _renderInner() {
-    const html = `
-      <form class="grfc-import-adventure" style="padding:.5rem;display:flex;flex-direction:column;height:100%;box-sizing:border-box;">
-        <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.5rem;">
-          <label style="white-space:nowrap;color:var(--color-text-dark-secondary,#666);font-size:.85em;">Module:</label>
-          <select class="grfc-module-select" style="flex:1 1 auto;min-width:0;" disabled>
-            <option value="">Loading modules…</option>
-          </select>
-        </div>
-        <div class="grfc-adventure-preview" style="flex:1 1 auto;overflow-y:auto;color:var(--color-text-dark-secondary,#666);font-size:.9em;line-height:1.5;"></div>
-        <p id="grfc-adventure-status" style="color:var(--color-text-dark-secondary,#666);margin:.5rem 0;">Loading modules…</p>
-        <button type="button" class="grfc-import-adventure-btn" style="margin-top:.5rem;" disabled>Import Adventure</button>
-      </form>
+  _adventureTabHtml() {
+    return `
+      <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.5rem;">
+        <label style="white-space:nowrap;color:var(--color-text-dark-secondary,#666);font-size:.85em;">Module:</label>
+        <select class="grfc-module-select" style="flex:1 1 auto;min-width:0;" disabled>
+          <option value="">Loading modules…</option>
+        </select>
+      </div>
+      <div class="grfc-adventure-preview" style="flex:1 1 auto;overflow-y:auto;color:var(--color-text-dark-secondary,#666);font-size:.9em;line-height:1.5;"></div>
+      <p id="grfc-adventure-status" style="color:var(--color-text-dark-secondary,#666);margin:.5rem 0;">Loading modules…</p>
+      <button type="button" class="grfc-import-adventure-btn" style="margin-top:.5rem;" disabled>Import Adventure</button>
     `;
-    return $(html);
   }
 
-  activateListeners(html) {
-    super.activateListeners(html);
-    this._loadModules(html);
-    html.find('.grfc-module-select').on('change', () => this._loadPreview(html));
-    html.find('.grfc-import-adventure-btn').on('click', () => this._doImport(html));
+  _adventureActivate(tab, modulesPromise) {
+    this._adventureLoadModules(tab, modulesPromise);
+    tab.find('.grfc-module-select').on('change', () => this._adventureLoadPreview(tab));
+    tab.find('.grfc-import-adventure-btn').on('click', () => this._adventureDoImport(tab));
   }
 
-  async _loadModules(html) {
+  async _adventureLoadModules(tab, modulesPromise) {
     await populateModuleSelect(
-      html.find('.grfc-module-select'),
-      html.find('#grfc-adventure-status'),
+      tab.find('.grfc-module-select'),
+      tab.find('#grfc-adventure-status'),
       'No adventure modules found in this Geektastic Realms world.',
-      'Choose a module to import.'
+      'Choose a module to import.',
+      modulesPromise
     );
   }
 
-  async _loadPreview(html) {
-    const moduleId = html.find('.grfc-module-select').val();
-    const preview = html.find('.grfc-adventure-preview');
-    const status = html.find('#grfc-adventure-status');
-    const importBtn = html.find('.grfc-import-adventure-btn');
+  async _adventureLoadPreview(tab) {
+    const moduleId = tab.find('.grfc-module-select').val();
+    const preview = tab.find('.grfc-adventure-preview');
+    const status = tab.find('#grfc-adventure-status');
+    const importBtn = tab.find('.grfc-import-adventure-btn');
     preview.empty();
     importBtn.prop('disabled', true);
 
@@ -2107,10 +2088,10 @@ class ImportAdventureForm extends FormApplicationBase {
     importBtn.prop('disabled', false);
   }
 
-  async _doImport(html) {
-    const moduleId = html.find('.grfc-module-select').val();
-    const status = html.find('#grfc-adventure-status');
-    const importBtn = html.find('.grfc-import-adventure-btn');
+  async _adventureDoImport(tab) {
+    const moduleId = tab.find('.grfc-module-select').val();
+    const status = tab.find('#grfc-adventure-status');
+    const importBtn = tab.find('.grfc-import-adventure-btn');
     if (!moduleId) return;
 
     importBtn.prop('disabled', true);
@@ -2184,51 +2165,50 @@ Hooks.once('init', () => {
     restricted: true,
   });
 
-  game.settings.registerMenu(MODULE_ID, 'createNpcMenu', {
-    name: 'Create Actor',
-    label: 'Create Actor',
-    hint: 'Pull a stat block from any category in Geektastic Realms — including custom ones like Monsters — and create it as an Actor in this world.',
-    icon: 'fas fa-user-plus',
-    type: CreateNpcForm,
-    restricted: true,
-  });
-
-  game.settings.registerMenu(MODULE_ID, 'importEncounterMenu', {
-    name: 'Deploy Encounter',
-    label: 'Deploy Encounter',
-    hint: 'Pick a module and one of its encounters, and create/update every adversary\'s Actor in this world in one action — optionally with a pre-built Combat.',
-    icon: 'fas fa-people-group',
-    type: ImportEncounterForm,
-    restricted: true,
-  });
-
-  game.settings.registerMenu(MODULE_ID, 'importHandoutsMenu', {
-    name: 'Import Handouts',
-    label: 'Import Handouts',
-    hint: 'Pick a module and import every one of its handouts as pages of a Journal Entry, ready to Show to Players at the table.',
-    icon: 'fas fa-book-open',
-    type: ImportHandoutsForm,
-    restricted: true,
-  });
-
-  game.settings.registerMenu(MODULE_ID, 'importRollTablesMenu', {
-    name: 'Import Roll Tables',
-    label: 'Import Roll Tables',
-    hint: 'Pick a module and import every one of its roll tables as native Foundry RollTable documents, rollable with Foundry\'s own dice.',
-    icon: 'fas fa-dice-d20',
-    type: ImportRollTablesForm,
-    restricted: true,
-  });
-
-  game.settings.registerMenu(MODULE_ID, 'importAdventureMenu', {
-    name: 'Import Adventure',
-    label: 'Import Adventure',
-    hint: 'Pick a module and import its whole section tree as one Journal Entry, with encounter/handout/roll table references linked to whatever Actors, pages, and tables you\'ve already imported.',
-    icon: 'fas fa-scroll',
-    type: ImportAdventureForm,
-    restricted: true,
-  });
+  // Stage 15: Create Actor / Deploy Encounter / Import Handouts / Import Roll Tables /
+  // Import Adventure used to each be their own Settings menu entry here. They're
+  // things a DM clicks repeatedly through a session, not one-time configuration, so
+  // they moved to the Geektastic Realms button in the Actors/Journal directory
+  // headers (ImportHubForm, and the renderActorDirectory/renderJournalDirectory hooks
+  // below) — Settings now only holds what's actually settings.
 });
+
+/**
+ * Adds a "Geektastic Realms" button to a sidebar directory's header (Stage 15) —
+ * opens the consolidated import hub (ImportHubForm above). Targets
+ * `.directory-header .action-buttons`, the row Foundry's own "Create Folder"/
+ * "Create Actor" buttons live in, with two fallback levels (appending to
+ * `.directory-header` itself, then to the directory root) so the button still shows
+ * up somewhere even if that specific container isn't found — not verified against a
+ * live world, so worth confirming the button actually appears and lands somewhere
+ * sensible. Wraps `html` in `$()` defensively in case a future Foundry version passes
+ * a raw element to this hook instead of a jQuery object, the way classic-Application
+ * render hooks have always done.
+ */
+function addImportHubButton(html) {
+  const $html = html instanceof jQuery ? html : $(html);
+
+  const button = $(
+    '<button type="button" class="grfc-hub-button" title="Open the Geektastic Realms import hub"><i class="fas fa-dragon"></i> Geektastic Realms</button>'
+  );
+  button.on('click', (event) => {
+    event.preventDefault();
+    new ImportHubForm().render(true);
+  });
+
+  const actions = $html.find('.directory-header .action-buttons');
+  const header = $html.find('.directory-header');
+  if (actions.length) {
+    actions.append(button);
+  } else if (header.length) {
+    header.append(button);
+  } else {
+    $html.prepend(button);
+  }
+}
+
+Hooks.on('renderActorDirectory', (app, html) => addImportHubButton(html));
+Hooks.on('renderJournalDirectory', (app, html) => addImportHubButton(html));
 
 Hooks.once('ready', () => {
   console.log(`${MODULE_ID} | ready`);

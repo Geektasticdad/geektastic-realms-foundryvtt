@@ -309,21 +309,41 @@ now **✅ also confirmed** working live (after tracking down a GR-side bug in v1
 that silently dropped the summary whenever no spellcasting ability was set — fixed in
 v1.28.1, see that bullet's sub-notes above).
 
-## Stage 15 — UX & platform
+## Stage 15 — UX & platform ✅ partially shipped (v1.7.0, unverified)
 
 Quality-of-life once the feature set stabilizes:
 
-- **Move entry points out of Module Settings** — a Geektastic Realms button in the
-  Actors/Journal directory headers (or a scene-controls tool) opening one consolidated
-  import dialog with tabs (Actors / Encounters / Handouts / Tables / Adventure).
-  Settings should be for settings.
-- **Token image support** — optional: use the GR featured image (or a dedicated token
-  image field, if GR adds one) for the prototype token, not just the portrait.
-- **ApplicationV2 migration + v14 compatibility** — migrate off the v1
+- [x] **Move entry points out of Module Settings (v1.7.0)** — a Geektastic Realms
+  button in the Actors/Journal directory headers opening one consolidated import
+  dialog with tabs (Actors / Encounters / Handouts / Tables / Adventure). Settings is
+  now only Server URL/API Token/Test Connection/Sync Compendiums. Implemented via
+  `FormApplication`'s native `options.tabs` support, not a custom tab system — every
+  tab's markup/behavior is the unchanged code from the five original dialogs, just
+  reached from one window instead of five settings menu entries. The directory-header
+  button placement is a best-effort DOM-selector guess (with fallback levels) rather
+  than something I could verify live — worth confirming it actually appears and lands
+  somewhere sensible.
+- [x] **Token image support (v1.7.0)** — a stat block's own dedicated
+  **Prototype token image** field (GR `token_media_id`) sets the created/re-synced
+  Actor's `prototypeToken.texture.src`; falls back to the same featured image already
+  used for the portrait when no dedicated token image is set (GR resolves this
+  fallback server-side, so the module doesn't need its own fallback logic). Applied
+  on both Create and Update, touching only the texture — every other prototype token
+  setting is left alone, same as before.
+- [ ] **ApplicationV2 migration + v14 compatibility** — migrate off the v1
   `FormApplication` API when v14's deprecation pressure makes it worthwhile; bump
   `compatibility.verified` after real testing.
-- **Localization scaffolding** (`lang/en.json`) if the module is headed for the
+- [ ] **Localization scaffolding** (`lang/en.json`) if the module is headed for the
   official package listing.
+
+**GR dependency:** `stat_blocks.token_media_id` and `token_media_id` on
+`GET /api/foundry/v1/npc/{entryId}/prepare` — ✅ shipped (GR v1.30.0). **Verification:**
+open the import hub from both the Actors and Journal sidebar header buttons and
+confirm each tab works exactly as its old standalone dialog did; set a dedicated
+token image on a stat block with a different image than its portrait, create/re-sync
+its Actor, and confirm the token (not just the portrait) uses that image; then clear
+the token image and confirm re-syncing falls back to the portrait image for the token
+too.
 
 ---
 

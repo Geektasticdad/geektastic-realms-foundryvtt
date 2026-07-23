@@ -9,6 +9,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.7.0] - 2026-07-22
+
+### Changed
+- **Stage 15 — the five import dialogs are now one tabbed hub.** Create Actor, Deploy
+  Encounter, Import Handouts, Import Roll Tables, and Import Adventure each used to be
+  their own Module Settings menu entry (`CreateNpcForm`/`ImportEncounterForm`/
+  `ImportHandoutsForm`/`ImportRollTablesForm`/`ImportAdventureForm`). All five are now
+  tabs (Actors/Encounters/Handouts/Tables/Adventure) in a single new `ImportHubForm`,
+  using `FormApplication`'s own built-in tab support — every tab's markup and behavior
+  is the exact same code the five original dialogs had, only the outer shell changed.
+  Opened from a new **Geektastic Realms** button added to the Actors and Journal
+  sidebar directory headers (`renderActorDirectory`/`renderJournalDirectory` hooks),
+  not Settings — these are things a DM clicks repeatedly through a session, not
+  one-time configuration. Settings now only holds Server URL, API Token, Test
+  Connection, and Sync Compendiums, which really are settings.
+  - The directory-header button placement/selector is my best understanding of
+    Foundry's sidebar DOM, not verified against a live world — it has two fallback
+    levels if the expected container isn't found, so the button should still appear
+    somewhere even if the primary selector is wrong, but worth confirming it lands in
+    a sensible spot.
+
+### Added
+- **Dedicated prototype token image**, separate from the Actor's portrait. A stat
+  block now has its own optional **Prototype token image** field on the Geektastic
+  Realms side (`token_media_id`) — when set, it's used for the created/re-synced
+  Actor's `prototypeToken.texture.src`; when not set, GR resolves the same featured
+  image already used for the portrait as a fallback, so a freshly-created Actor never
+  lands with Foundry's blank default token unless the entry has no image at all
+  either. Applied on both Create and Update — previously nothing about the prototype
+  token was ever touched by either path. Only the texture is touched; disposition,
+  scale, vision, and every other prototype token setting are left alone, same as
+  before.
+
 ## [1.6.3] - 2026-07-22
 
 ### Added
