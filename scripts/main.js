@@ -1650,6 +1650,8 @@ class ImportHubForm extends FormApplicationBase {
 
     const syncedActors = syncedActorsByEntryId();
 
+    const budgetColors = { Easy: '#2e7d32', Medium: '#1565c0', Hard: '#b26a00', Deadly: '#c62828' };
+
     encounters.forEach((encounter) => {
       const adversaries = encounter.adversaries || [];
       const rosterText = adversaries.length === 0
@@ -1657,13 +1659,21 @@ class ImportHubForm extends FormApplicationBase {
         : adversaries.map((a) => `${a.quantity}× ${a.name}`).join(', ');
       const totalCreatures = adversaries.reduce((sum, a) => sum + a.quantity, 0);
 
+      // Roadmap 3.1's computed XP-budget rating — a mechanical cross-check shown
+      // alongside (never replacing) the free-text `difficulty` above.
+      const budget = encounter.budget;
+      const budgetColor = budget ? (budgetColors[budget.rating] || '#666') : '';
+      const budgetHtml = budget
+        ? ` <span style="color:${budgetColor};font-weight:600;" title="${escapeHtml(`${budget.adjusted_xp} adjusted XP · ${budget.daily_percent}% of a level ${budget.level}, ${budget.party_size}-player daily budget`)}">${escapeHtml(budget.rating)}</span>`
+        : '';
+
       const li = $(`
         <li style="padding:.5rem 0;border-bottom:1px solid #7773;">
           <div style="display:flex;align-items:center;gap:.5rem;">
             <span style="flex:1 1 auto;min-width:0;">
               <strong>${escapeHtml(encounter.name)}</strong>
               <span style="color:var(--color-text-dark-secondary,#666);font-size:.85em;">
-                — ${escapeHtml(encounter.encounter_type || '')}${encounter.difficulty ? ' · ' + escapeHtml(encounter.difficulty) : ''}${encounter.section_title ? ' · ' + escapeHtml(encounter.section_title) : ''}
+                — ${escapeHtml(encounter.encounter_type || '')}${encounter.difficulty ? ' · ' + escapeHtml(encounter.difficulty) : ''}${budgetHtml}${encounter.section_title ? ' · ' + escapeHtml(encounter.section_title) : ''}
               </span>
             </span>
             <span class="grfc-encounter-row-status" style="flex:0 0 auto;min-width:1.5em;text-align:right;"></span>
@@ -1956,10 +1966,10 @@ class ImportHubForm extends FormApplicationBase {
 
     const rollTables = result.body.roll_tables || [];
     if (rollTables.length === 0) {
-      status.text('No roll tables in this module.');
+      status.text('No roll tables available for this module.');
       return;
     }
-    status.text(`${rollTables.length} roll table${rollTables.length === 1 ? '' : 's'} in this module.`);
+    status.text(`${rollTables.length} roll table${rollTables.length === 1 ? '' : 's'} available for this module.`);
 
     const synced = syncedRollTablesByGrId();
     rollTables.forEach((table) => {
@@ -1967,12 +1977,15 @@ class ImportHubForm extends FormApplicationBase {
       const isChanged = !!existing && existing.getFlag(MODULE_ID, 'grContentHash') !== table.content_hash;
       const statusLabel = !existing ? 'New' : isChanged ? '↻ Changed' : '✓ Up to date';
       const statusColor = !existing ? 'var(--color-text-dark-secondary,#666)' : isChanged ? '#b26a00' : '#2e7d32';
+      // Roadmap 3.4 — a "world" table lives in the setting's shared library, not
+      // owned by this module, but embeddable here just like one of its own.
+      const scopeTag = table.scope === 'world' ? ' 🌍 World library' : '';
 
       const li = $(`
         <li style="display:flex;align-items:center;gap:.5rem;padding:.35rem 0;border-bottom:1px solid #7773;">
           <span style="flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
             <strong>${escapeHtml(table.title)}</strong>
-            <span style="color:var(--color-text-dark-secondary,#666);font-size:.85em;"> — ${escapeHtml(table.die)}, ${table.rows.length} row${table.rows.length === 1 ? '' : 's'}${table.section_title ? ' — ' + escapeHtml(table.section_title) : ''}</span>
+            <span style="color:var(--color-text-dark-secondary,#666);font-size:.85em;"> — ${escapeHtml(table.die)}, ${table.rows.length} row${table.rows.length === 1 ? '' : 's'}${table.section_title ? ' — ' + escapeHtml(table.section_title) : ''}${escapeHtml(scopeTag)}</span>
           </span>
           <span style="flex:0 0 auto;font-size:.8em;color:${statusColor};white-space:nowrap;">${statusLabel}</span>
         </li>

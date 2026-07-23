@@ -125,6 +125,10 @@ converged without a duplicate.
 - [x] Per-step progress like the existing Create Actor flow; a failure on one
   adversary doesn't abort the rest — the dialog reports how many deployed and,
   if any failed, which ones and why.
+- [x] **v1.7.2**: the encounter picker also shows GR's computed DMG XP-budget
+  rating (Easy/Medium/Hard/Deadly, color-coded, GR Roadmap 3.1) next to the
+  free-text difficulty — a mechanical cross-check when deciding what to deploy.
+  Requires GR v1.34.1+.
 - [x] **First live test surfaced a real gap, now fixed (v1.2.1):** v1.2.0's first
   real run confirmed Actor creation and Combat creation both worked, but the
   Combat's combatants had no placed tokens — "create the encounter" didn't mean
@@ -187,6 +191,10 @@ live Foundry world and GR deployment; pages rendered correctly.
   rebuilds tables whose content actually changed; a failure on one table doesn't
   abort the rest.
 - [x] **Live verification — ✅ confirmed working in a live world.**
+- [x] **v1.7.2**: the import list now includes GR's world-level roll table library
+  (GR Roadmap 3.4) alongside a module's own tables — a table built once at the
+  world level and embedded into a module via `/rolltable` now actually syncs,
+  tagged "🌍 World library" in the list. Requires GR v1.34.1+.
 
 **GR dependency:** `GET /api/foundry/v1/modules/{moduleId}/roll-tables` — ✅ shipped
 (GR v1.23.0). **Verification: ✅ confirmed** — imported a module's roll tables

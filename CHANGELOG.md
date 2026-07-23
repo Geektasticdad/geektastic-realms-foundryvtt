@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.7.2] - 2026-07-23
+
+### Added
+- **Deploy Encounter picker shows the computed XP-budget rating.** Alongside each
+  encounter's free-text difficulty, the picker now shows GR's DMG XP-budget
+  rating (Easy/Medium/Hard/Deadly), color-coded, with adjusted-XP and
+  daily-budget-percent in a tooltip — a mechanical cross-check, not a
+  replacement for the free-text field. Requires GR v1.34.1+.
+- **Import Roll Tables now includes the world roll table library.** GR promoted
+  roll tables to world-level with optional module attribution — a table built
+  once in a world's shared library can be embedded into any of that world's
+  adventures via `/rolltable`. Previously, importing a module's roll tables only
+  pulled ones owned by that module, so an embedded world-level table silently
+  never made it into Foundry. The import list now shows every table
+  embeddable in the module (its own plus the world's library), tagging library
+  ones "🌍 World library". Requires GR v1.34.1+.
+
 ## [1.7.1] - 2026-07-22
 
 ### Fixed
