@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.7.1] - 2026-07-22
+
+### Fixed
+- **Import hub tabs didn't switch.** v1.7.0 relied on `FormApplication`'s built-in
+  `options.tabs` binding to handle clicking a nav item — it never actually switched
+  which panel was visible, so the hub stayed stuck on Actors no matter what you
+  clicked. Replaced with a small, self-contained click handler in `activateListeners()`
+  that doesn't depend on any Foundry-internal tab machinery: click a nav item, its
+  matching `.tab` panel is shown via an inline style toggle and the rest are hidden.
+  Also tightened the per-tab element lookups (`.grfc-hub-content > [data-tab="…"]`)
+  that previously matched both a tab's nav link and its content panel — harmless in
+  practice since `.find()` unioned the descendants correctly either way, but the
+  narrower selector is clearer about what it's targeting.
+
 ## [1.7.0] - 2026-07-22
 
 ### Changed

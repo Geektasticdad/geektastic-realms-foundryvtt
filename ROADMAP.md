@@ -309,20 +309,25 @@ now **✅ also confirmed** working live (after tracking down a GR-side bug in v1
 that silently dropped the summary whenever no spellcasting ability was set — fixed in
 v1.28.1, see that bullet's sub-notes above).
 
-## Stage 15 — UX & platform ✅ partially shipped (v1.7.0, unverified)
+## Stage 15 — UX & platform ✅ partially shipped (v1.7.1, unverified)
 
 Quality-of-life once the feature set stabilizes:
 
-- [x] **Move entry points out of Module Settings (v1.7.0)** — a Geektastic Realms
-  button in the Actors/Journal directory headers opening one consolidated import
-  dialog with tabs (Actors / Encounters / Handouts / Tables / Adventure). Settings is
-  now only Server URL/API Token/Test Connection/Sync Compendiums. Implemented via
-  `FormApplication`'s native `options.tabs` support, not a custom tab system — every
-  tab's markup/behavior is the unchanged code from the five original dialogs, just
-  reached from one window instead of five settings menu entries. The directory-header
-  button placement is a best-effort DOM-selector guess (with fallback levels) rather
-  than something I could verify live — worth confirming it actually appears and lands
-  somewhere sensible.
+- [x] **Move entry points out of Module Settings (v1.7.0, tab-switching fixed in
+  v1.7.1)** — a Geektastic Realms button in the Actors/Journal directory headers
+  opening one consolidated import dialog with tabs (Actors / Encounters / Handouts /
+  Tables / Adventure). Settings is now only Server URL/API Token/Test
+  Connection/Sync Compendiums. Every tab's markup/behavior is the unchanged code from
+  the five original dialogs, just reached from one window instead of five settings
+  menu entries.
+  - First live test: the directory-header button appeared and opened the hub
+    correctly, but clicking a tab never switched away from Actors. v1.7.0 relied on
+    `FormApplication`'s built-in `options.tabs` binding, which didn't actually fire
+    the panel switch on click. Fixed in v1.7.1 with a small self-contained click
+    handler instead — no longer depends on that Foundry-internal mechanism at all.
+  - The directory-header button placement is still a best-effort DOM-selector guess
+    (with fallback levels); confirmed to work in the live test above, so this part is
+    now considered verified.
 - [x] **Token image support (v1.7.0)** — a stat block's own dedicated
   **Prototype token image** field (GR `token_media_id`) sets the created/re-synced
   Actor's `prototypeToken.texture.src`; falls back to the same featured image already
@@ -338,12 +343,14 @@ Quality-of-life once the feature set stabilizes:
 
 **GR dependency:** `stat_blocks.token_media_id` and `token_media_id` on
 `GET /api/foundry/v1/npc/{entryId}/prepare` — ✅ shipped (GR v1.30.0). **Verification:**
-open the import hub from both the Actors and Journal sidebar header buttons and
-confirm each tab works exactly as its old standalone dialog did; set a dedicated
-token image on a stat block with a different image than its portrait, create/re-sync
-its Actor, and confirm the token (not just the portrait) uses that image; then clear
-the token image and confirm re-syncing falls back to the portrait image for the token
-too.
+opening the hub from the Actors directory-header button and seeing all five tabs is
+**✅ confirmed** (the bug report that led to v1.7.1). Still open: re-confirm tab
+switching actually works now (click through all five, not just Actors), confirm the
+Journal directory-header button too, and confirm each tab's behavior matches its old
+standalone dialog. Separately, set a dedicated token image on a stat block with a
+different image than its portrait, create/re-sync its Actor, and confirm the token
+(not just the portrait) uses that image; then clear the token image and confirm
+re-syncing falls back to the portrait image for the token too.
 
 ---
 

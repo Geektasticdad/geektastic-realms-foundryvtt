@@ -315,8 +315,10 @@ session straight from Foundry.
   extends a `FormApplicationBase` constant (`scripts/main.js`) that resolves to
   `foundry.appv1.api.FormApplication` if present, falling back to the bare
   `FormApplication` global otherwise — covers both v13 variants without needing to know
-  ahead of time which one a given build exposes. `ImportHubForm`'s tabs use
-  `Application`'s own built-in `options.tabs` support, not a custom implementation.
+  ahead of time which one a given build exposes. `ImportHubForm`'s tab switching is a
+  small self-contained click handler, not `Application`'s built-in `options.tabs`
+  binding — that was tried first but didn't actually switch panels on click, so it was
+  replaced rather than chased down.
 - The `syncPacks` world setting (your saved pack selection) is intentionally not in the
   visible Module Settings list (`config: false`) — it's managed entirely through the
   Sync Compendiums dialog's checkboxes.

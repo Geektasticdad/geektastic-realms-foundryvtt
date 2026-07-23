@@ -1332,11 +1332,13 @@ class CompendiumSyncForm extends FormApplicationBase {
  * a session, not one-time configuration, so Settings now only holds Server URL/API
  * Token/Test Connection/Sync Compendiums, which really are settings.
  *
- * Uses FormApplicationBase's native tab support (`options.tabs`, wired up for free by
- * the base class's own activateListeners()) instead of five separate windows. Every
- * tab's markup and behavior is the exact same code the five original dialogs had —
- * only the outer shell changed, so this should behave identically to before, just
- * reachable from one place with five tabs instead of five menu entries. Each tab's DOM
+ * Tab switching is a small self-contained click handler in activateListeners() below
+ * (a v1.7.0 build tried FormApplication's built-in `options.tabs` binding instead —
+ * clicking a nav item never actually switched panels, so this replaced it rather than
+ * chase why). Every tab's markup and behavior is the exact same code the five
+ * original dialogs had — only the outer shell changed, so this should behave
+ * identically to before, just reachable from one place with five tabs instead of five
+ * menu entries. Each tab's DOM
  * queries are scoped to that tab's own container (a `tab` jQuery element passed into
  * every method below), never the whole dialog — several tabs reuse the same class
  * names (e.g. `.grfc-module-select` appears in four different tabs), so scoping is
@@ -1353,7 +1355,6 @@ class ImportHubForm extends FormApplicationBase {
       height: 640,
       closeOnSubmit: false,
       resizable: true,
-      tabs: [{ navSelector: '.grfc-hub-tabs', contentSelector: '.grfc-hub-content', initial: 'actors' }],
     });
   }
 
@@ -1370,27 +1371,27 @@ class ImportHubForm extends FormApplicationBase {
              panels' content at once instead of switching between them. */
           .grfc-import-hub .tab:not(.active) { display: none; }
         </style>
-        <nav class="grfc-hub-tabs tabs" data-group="primary" style="flex:0 0 auto;">
-          <a class="item" data-tab="actors"><i class="fas fa-user-plus"></i> Actors</a>
+        <nav class="grfc-hub-tabs tabs" style="flex:0 0 auto;">
+          <a class="item active" data-tab="actors"><i class="fas fa-user-plus"></i> Actors</a>
           <a class="item" data-tab="encounters"><i class="fas fa-people-group"></i> Encounters</a>
           <a class="item" data-tab="handouts"><i class="fas fa-book-open"></i> Handouts</a>
           <a class="item" data-tab="tables"><i class="fas fa-dice-d20"></i> Tables</a>
           <a class="item" data-tab="adventure"><i class="fas fa-scroll"></i> Adventure</a>
         </nav>
         <section class="grfc-hub-content" style="flex:1 1 auto;overflow:hidden;padding-top:.5rem;">
-          <div class="tab" data-tab="actors" data-group="primary" style="height:100%;display:flex;flex-direction:column;box-sizing:border-box;padding:0 .25rem;">
+          <div class="tab active" data-tab="actors" style="height:100%;display:flex;flex-direction:column;box-sizing:border-box;padding:0 .25rem;">
             ${this._actorsTabHtml()}
           </div>
-          <div class="tab" data-tab="encounters" data-group="primary" style="height:100%;display:flex;flex-direction:column;box-sizing:border-box;padding:0 .25rem;">
+          <div class="tab" data-tab="encounters" style="height:100%;display:flex;flex-direction:column;box-sizing:border-box;padding:0 .25rem;">
             ${this._encountersTabHtml()}
           </div>
-          <div class="tab" data-tab="handouts" data-group="primary" style="height:100%;display:flex;flex-direction:column;box-sizing:border-box;padding:0 .25rem;">
+          <div class="tab" data-tab="handouts" style="height:100%;display:flex;flex-direction:column;box-sizing:border-box;padding:0 .25rem;">
             ${this._handoutsTabHtml()}
           </div>
-          <div class="tab" data-tab="tables" data-group="primary" style="height:100%;display:flex;flex-direction:column;box-sizing:border-box;padding:0 .25rem;">
+          <div class="tab" data-tab="tables" style="height:100%;display:flex;flex-direction:column;box-sizing:border-box;padding:0 .25rem;">
             ${this._tablesTabHtml()}
           </div>
-          <div class="tab" data-tab="adventure" data-group="primary" style="height:100%;display:flex;flex-direction:column;box-sizing:border-box;padding:0 .25rem;">
+          <div class="tab" data-tab="adventure" style="height:100%;display:flex;flex-direction:column;box-sizing:border-box;padding:0 .25rem;">
             ${this._adventureTabHtml()}
           </div>
         </section>
@@ -1400,7 +1401,23 @@ class ImportHubForm extends FormApplicationBase {
   }
 
   activateListeners(html) {
-    super.activateListeners(html); // wires up tab-switching via options.tabs above
+    super.activateListeners(html);
+
+    // Explicit, self-contained tab switching — not FormApplication's built-in
+    // options.tabs binding, which turned out not to actually switch panels (clicking
+    // a nav item never changed what was shown). Click a nav item, show its matching
+    // .tab panel via an inline style toggle (not just a CSS class, so this doesn't
+    // depend on any core stylesheet being present), hide the rest.
+    const navItems = html.find('.grfc-hub-tabs .item');
+    const panels = html.find('.grfc-hub-content > .tab');
+    navItems.on('click', (event) => {
+      event.preventDefault();
+      const tabName = $(event.currentTarget).data('tab');
+      navItems.removeClass('active');
+      $(event.currentTarget).addClass('active');
+      panels.removeClass('active').hide();
+      panels.filter(`[data-tab="${tabName}"]`).addClass('active').show();
+    });
 
     // One shared modules fetch — Encounters/Handouts/Tables/Adventure all start with
     // "pick a module," so this avoids four independent GET .../modules calls firing
@@ -1408,11 +1425,11 @@ class ImportHubForm extends FormApplicationBase {
     // times instead of each starting its own fetch.
     const modulesPromise = fetchModuleList();
 
-    this._actorsActivate(html.find('[data-tab="actors"]'));
-    this._encountersActivate(html.find('[data-tab="encounters"]'), modulesPromise);
-    this._handoutsActivate(html.find('[data-tab="handouts"]'), modulesPromise);
-    this._tablesActivate(html.find('[data-tab="tables"]'), modulesPromise);
-    this._adventureActivate(html.find('[data-tab="adventure"]'), modulesPromise);
+    this._actorsActivate(html.find('.grfc-hub-content > [data-tab="actors"]'));
+    this._encountersActivate(html.find('.grfc-hub-content > [data-tab="encounters"]'), modulesPromise);
+    this._handoutsActivate(html.find('.grfc-hub-content > [data-tab="handouts"]'), modulesPromise);
+    this._tablesActivate(html.find('.grfc-hub-content > [data-tab="tables"]'), modulesPromise);
+    this._adventureActivate(html.find('.grfc-hub-content > [data-tab="adventure"]'), modulesPromise);
   }
 
   // ── Actors (Stage 5/9: create/re-sync an Actor from any GR stat block) ──────
