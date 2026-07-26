@@ -1535,7 +1535,7 @@ class ImportHubForm extends GrfcApplication {
       <div style="display:flex; gap:.5rem; margin-bottom:.5rem;">
         <input type="text" class="grfc-npc-search" placeholder="Search by name…"
           style="flex:1 1 auto;min-width:0;box-sizing:border-box;" disabled>
-        <select class="grfc-category-filter" style="flex:0 0 auto;" disabled>
+        <select class="grfc-category-filter" style="flex:0 0 160px;box-sizing:border-box;" disabled>
           <option value="">All categories</option>
         </select>
       </div>

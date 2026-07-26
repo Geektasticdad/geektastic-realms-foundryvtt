@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.0.1] - 2026-07-26
+
+### Fixed
+- **Actors tab: search box was tiny, category dropdown took up most of the
+  row.** Both elements used `flex: _ _ auto`, but the category `<select>` has
+  no explicit width of its own — Foundry's core stylesheet likely defaults
+  `<select>` to `width: 100%`, and with an `auto` flex-basis that inherited
+  width won, letting the dropdown claim the row before the search input (held
+  to `min-width: 0`) got anything. Fixed by giving the category filter a fixed
+  `flex: 0 0 160px`, which overrides any inherited `width` in the flex sizing
+  algorithm regardless of what set it, leaving the rest of the row to search.
+
 ## [2.0.0] - 2026-07-25
 
 ### Changed
