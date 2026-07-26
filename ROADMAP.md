@@ -29,13 +29,10 @@ destination-folder picker, and Actor portraits from GR featured images (v0.7–v
 All seven build-out stages (handshake, compendium sync, matching, Actor creation,
 icons, item typing) are now **✅ confirmed against a real Foundry world** — see the main
 repo's build log. Stages 9 (Actor re-sync), 10 (Deploy Encounter, including the
-v1.2.1 token-placement fix), 11 (Handouts → Journal), and 12 (Roll Tables → native
-RollTables) are now **✅ confirmed working in a live world** too. Known debts, in
-rough order of risk:
+v1.2.1 token-placement fix), 11 (Handouts → Journal), 12 (Roll Tables → native
+RollTables), and 13 (Adventure → Journal export) are now **✅ confirmed working in a
+live world** too. Known debts, in rough order of risk:
 
-- **Stage 13 (Adventure → Journal export) hasn't been verified against a live GR
-  instance yet** — the round-trip described in its own "Verification" line below
-  hasn't actually been run.
 - v14 compatibility is still unverified (`compatibility.verified` stays at `13` until
   actually tested there).
 
@@ -43,59 +40,12 @@ rough order of risk:
 
 ## Completed stages
 
-Stages 8–12 and 14 are fully shipped and confirmed working in a live world — moved to
+Stages 8–14 are fully shipped and confirmed working in a live world — moved to
 [ROADMAP_Completed.md](ROADMAP_Completed.md) to keep this file focused on what's still
 open. That covers the release pipeline, Actor re-sync, Deploy Encounter (including
-token placement), Handouts → Journal, Roll Tables → native RollTables, and
-spellcasting fidelity (summary feature, spell cloning, caster level, save
-proficiencies).
-
-## Stage 13 — Adventure → Journal export ✅ shipped (code-complete; live verification still open)
-
-*The capstone: composes Stages 9–12.*
-
-- [x] GR dependency shipped first, in GR v1.24.0: a module-prepare endpoint,
-  `GET /api/foundry/v1/modules/{moduleId}/prepare` — the module's overview plus
-  its full section tree (real `body_html`, not the lightweight general-purpose-API
-  outline) with a `content_hash` per section, plus each section's Related Articles.
-  Deliberately does **not** resolve ref IDs into Foundry document ids itself (GR
-  has no way to know what Stages 10–12 created locally in a given world) — see
-  [Tech_Docs/FOUNDRY_API.md](https://github.com/Geektasticdad/geektastic-realms/blob/main/Tech_Docs/FOUNDRY_API.md)
-  in the main repo.
-- [x] New **Import Adventure** dialog: pick a module, preview title/summary/section
-  count, click **Import Adventure** once. Imports a whole module as one structured
-  Journal Entry — Acts/Chapters/Scenes/Appendices as pages in depth-first tree
-  order (Foundry's page model has no true page-within-page nesting, so "nested" is
-  achieved via ordering + per-type heading level, matching the web run view's own
-  Act=H1/Chapter=H2/Scene=H3/Appendix=H2 convention).
-- [x] `encounter-ref`/`handout-ref`/`roll-table-ref` chips in section bodies are
-  rewritten into `@UUID` links to the documents Stages 10–12 already created,
-  using the same `eid-`/`hid-`/`rtid-` class-token trick the web run view's own
-  ref-expansion helpers key off. Anything not yet imported for that specific item
-  falls back to plain text instead of a broken link.
-- [x] Entry mentions (each section's Related Articles) are linked to a matching
-  Actor where Stage 9 already created one — using the structured Related Articles
-  data rather than parsing GR's inline `@`-mention anchors, which would depend on
-  whether `data-entry-id` survives HTMLPurifier sanitization (see the GR-side
-  reasoning linked above).
-- [x] Reuses the same per-module Journal Entry Stage 11 already creates — a
-  module's narrative and its handouts end up in one journal, not two.
-- [x] Re-runnable: page-level `content_hash` comparison means only sections that
-  actually changed get rebuilt; every page's `sort` is still kept current even
-  when unchanged, so reordered/added/removed sections don't leave the journal out
-  of order. A failure on one section doesn't abort the rest.
-- [x] Explicitly built **after** 10–12 shipped and were confirmed live — this
-  stage creates no new Actors/RollTables/handout pages itself, only links to what
-  already exists, matching the "mostly plumbing" scoping.
-- [ ] **Live verification** — hasn't been run against a real Foundry world + GR
-  v1.24.0+ instance yet.
-
-**GR dependency:** `GET /api/foundry/v1/modules/{moduleId}/prepare` — ✅ shipped (GR
-v1.24.0). **Verification:** run a session entirely from the imported journal —
-narrative, one fight via its linked encounter (deployed beforehand via Deploy
-Encounter), one handout shown to players (imported beforehand via Import Handouts),
-one table rolled (imported beforehand via Import Roll Tables); edit one section in
-GR, re-import, and confirm only that page rebuilds.
+token placement), Handouts → Journal, Roll Tables → native RollTables, Adventure →
+Journal export, and spellcasting fidelity (summary feature, spell cloning, caster
+level, save proficiencies).
 
 ## Stage 15 — UX & platform ✅ partially shipped (v1.7.1, unverified)
 

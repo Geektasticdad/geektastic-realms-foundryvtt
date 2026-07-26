@@ -166,6 +166,51 @@ live Foundry world and GR deployment; pages rendered correctly.
 (GR v1.23.0). **Verification: ✅ confirmed** — imported a module's roll tables
 against a live Foundry world and GR deployment; tables rolled correctly.
 
+## Stage 13 — Adventure → Journal export ✅ shipped and confirmed working in a live world
+
+*The capstone: composes Stages 9–12.*
+
+- [x] GR dependency shipped first, in GR v1.24.0: a module-prepare endpoint,
+  `GET /api/foundry/v1/modules/{moduleId}/prepare` — the module's overview plus
+  its full section tree (real `body_html`, not the lightweight general-purpose-API
+  outline) with a `content_hash` per section, plus each section's Related Articles.
+  Deliberately does **not** resolve ref IDs into Foundry document ids itself (GR
+  has no way to know what Stages 10–12 created locally in a given world) — see
+  [Tech_Docs/FOUNDRY_API.md](https://github.com/Geektasticdad/geektastic-realms/blob/main/Tech_Docs/FOUNDRY_API.md)
+  in the main repo.
+- [x] New **Import Adventure** dialog: pick a module, preview title/summary/section
+  count, click **Import Adventure** once. Imports a whole module as one structured
+  Journal Entry — Acts/Chapters/Scenes/Appendices as pages in depth-first tree
+  order (Foundry's page model has no true page-within-page nesting, so "nested" is
+  achieved via ordering + per-type heading level, matching the web run view's own
+  Act=H1/Chapter=H2/Scene=H3/Appendix=H2 convention).
+- [x] `encounter-ref`/`handout-ref`/`roll-table-ref` chips in section bodies are
+  rewritten into `@UUID` links to the documents Stages 10–12 already created,
+  using the same `eid-`/`hid-`/`rtid-` class-token trick the web run view's own
+  ref-expansion helpers key off. Anything not yet imported for that specific item
+  falls back to plain text instead of a broken link.
+- [x] Entry mentions (each section's Related Articles) are linked to a matching
+  Actor where Stage 9 already created one — using the structured Related Articles
+  data rather than parsing GR's inline `@`-mention anchors, which would depend on
+  whether `data-entry-id` survives HTMLPurifier sanitization (see the GR-side
+  reasoning linked above).
+- [x] Reuses the same per-module Journal Entry Stage 11 already creates — a
+  module's narrative and its handouts end up in one journal, not two.
+- [x] Re-runnable: page-level `content_hash` comparison means only sections that
+  actually changed get rebuilt; every page's `sort` is still kept current even
+  when unchanged, so reordered/added/removed sections don't leave the journal out
+  of order. A failure on one section doesn't abort the rest.
+- [x] Explicitly built **after** 10–12 shipped and were confirmed live — this
+  stage creates no new Actors/RollTables/handout pages itself, only links to what
+  already exists, matching the "mostly plumbing" scoping.
+- [x] **Live verification — ✅ confirmed working in a live world.**
+
+**GR dependency:** `GET /api/foundry/v1/modules/{moduleId}/prepare` — ✅ shipped (GR
+v1.24.0). **Verification: ✅ confirmed** — ran a session entirely from the imported
+journal: narrative, one fight via its linked encounter (deployed beforehand via
+Deploy Encounter), one handout shown to players (imported beforehand via Import
+Handouts), one table rolled (imported beforehand via Import Roll Tables).
+
 ## Stage 14 — Spellcasting fidelity ✅ shipped and confirmed working in a live world (spellcasting-summary feature in v1.6.1/v1.6.2, caster level + save proficiencies in v1.6.3, all confirmed)
 
 - [x] **Spellcasting summary imported as a feature (v1.6.1, cloned from a
