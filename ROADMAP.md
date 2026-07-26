@@ -33,8 +33,9 @@ v1.2.1 token-placement fix), 11 (Handouts → Journal), 12 (Roll Tables → nati
 RollTables), and 13 (Adventure → Journal export) are now **✅ confirmed working in a
 live world** too. Known debts, in rough order of risk:
 
-- v14 compatibility is still unverified (`compatibility.verified` stays at `13` until
-  actually tested there).
+- v14 compatibility: the ApplicationV2 migration and ProseMirror-safety fixes shipped
+  in v2.0.0 (Stage 15), but neither has been live-tested against a real Foundry v14
+  instance yet — `compatibility.verified` stays at `13` until that happens.
 
 ---
 
@@ -73,52 +74,49 @@ Quality-of-life once the feature set stabilizes:
   fallback server-side, so the module doesn't need its own fallback logic). Applied
   on both Create and Update, touching only the texture — every other prototype token
   setting is left alone, same as before.
-- [ ] **ApplicationV2 migration + v14 compatibility** — migrate off the v1
-  `FormApplication` API when v14's deprecation pressure makes it worthwhile; bump
-  `compatibility.verified` after real testing (currently `"minimum": "13",
-  "verified": "13"` in `module.json`, no `maximum`).
-  - Scope: `FormApplicationBase` (`scripts/main.js:39`, resolves
-    `foundry.appv1.api.FormApplication ?? FormApplication`) is extended by exactly
-    three classes — `TestConnectionForm` (`:1178`), `CompendiumSyncForm` (`:1242`),
-    and the consolidated `ImportHubForm` (`:1349`, Stage 15's 5-tab hub: actors /
-    encounters / handouts / tables / adventure). Migrating means porting these
-    three to ApplicationV2's render/parts/action model — not five separate
-    dialogs, since Stage 15 already consolidated them into one.
-  - **Reminder — Foundry v14 removes TinyMCE; ProseMirror becomes the only
-    supported rich-text editor** for Journal Entry pages (and other HTML
-    fields). GR itself isn't changing — it stays on Tiptap — this is purely
-    about what happens on the Foundry side to the HTML this module writes.
-    `TextEditor.enrichHTML` renders raw HTML fine regardless of editor, so
-    first-view display isn't the risk; the risk is the moment a DM opens an
-    imported page in Foundry's own page editor to tweak it — ProseMirror parses
-    the existing HTML through its own schema, and content it doesn't recognize
-    doesn't survive that round-trip.
-    - GR's editor has six custom "callout" block types built from one factory,
-      `makeWrapperNode(name, cssClass)` (`geektastic-realms/public/assets/js/
-      block-editor.js:148-168`): `read-aloud`, `dm-note`, `encounter-block`,
-      `treasure-block`, `boxed-text`, `dm-secret` (registered at `:272-277`).
-      Each renders as `<div class="{cssClass}">...normal paragraphs/lists...
-      </div>` — a plain wrapper `<div>` is not a node type in ProseMirror's
-      schema, and ProseMirror's default behavior for an unrecognized element is
-      to recurse into its children and drop the wrapper. Expected outcome: the
-      inner text likely survives a Foundry-side edit + save, but the callout's
-      distinguishing class/styling likely doesn't — **needs an actual test**
-      (import a page with each callout type, open it in Foundry's v14 editor,
-      save without changing anything, diff the resulting HTML) rather than
-      assuming either way.
-    - `rewriteAdventureRefs()` (`scripts/main.js:426-462`, used by Stage 13's
-      Adventure → Journal export) rewrites `eid-`/`hid-`/`rtid-` chips into
-      `@UUID` links but has **no handling for `qid-` (quest-ref)** — GR's newer
-      "Insert Quest" slash command chips pass through unrewritten today. Add a
-      `qid-{N}`/`qkind-{quest|secret}` case alongside the existing three, or
-      explicitly log it as a known gap if descoped. (`@UUID` links are
-      Foundry-native anchor syntax once rewritten, so they're not a ProseMirror
-      compatibility risk the way the callout `<div>`s above are.)
-    - `handoutPageContent()` (`scripts/main.js:264-266`, Stage 11's Handouts →
-      Journal) passes `handout.body_html` straight through with **no
-      ref-rewriting at all** — same callout-block survival question applies
-      here too if a handout body uses one of GR's six callout types, plus the
-      same unhandled `qid-` gap if a handout ever embeds a quest-ref.
+- [x] **ApplicationV2 migration + v14 compatibility (v2.0.0, live verification
+  still open)** — migrated off the v1 `FormApplication` API, which Foundry v14
+  removes entirely. `compatibility.verified` stays `"13"` in `module.json` —
+  ApplicationV2 already works on v13 (that's what made doing this ahead of v14's
+  forcing deadline possible), and `verified` isn't bumped to `14` until this is
+  actually tested there.
+  - Scope: the new shared `GrfcApplication` base (`scripts/main.js`, extends
+    `foundry.applications.api.ApplicationV2`) is extended by the same three
+    classes that used to extend `FormApplicationBase` — `TestConnectionForm`,
+    `CompendiumSyncForm`, and the consolidated `ImportHubForm` (Stage 15's 5-tab
+    hub: actors / encounters / handouts / tables / adventure). Every dialog's
+    HTML-building and jQuery event-wiring code (all five tabs' worth) is
+    unchanged — only the class-level lifecycle hooks were ported:
+    `defaultOptions` → `static DEFAULT_OPTIONS`, `getData()`/`_renderInner()` →
+    `_prepareContext()`/`_renderHTML()`, `activateListeners()` → `_onRender()`.
+  - **Foundry v14 also makes ProseMirror the only supported rich-text editor**
+    for Journal Entry pages. GR itself isn't changing (still Tiptap) — this is
+    purely about what survives on the Foundry side when a DM opens an imported
+    page in Foundry's own editor to tweak it, since ProseMirror re-parses the
+    existing HTML through its own schema on load. Two fixes landed in v2.0.0:
+    - GR's six custom Tiptap "callout" block types (`read-aloud`, `dm-note`,
+      `encounter-block`, `treasure-block`, `boxed-text`, `dm-secret` — all built
+      from GR's `makeWrapperNode()` factory) are now rewritten
+      (`rewriteCalloutBlocks()`) from a plain `<div class="...">` — not a
+      ProseMirror schema node, and previously left to be silently unwrapped —
+      into a `<blockquote>` with a bold label identifying the callout type.
+      Best-effort: **still needs an actual test** (import a page with each
+      callout type, open it in Foundry's v14 editor, save without changing
+      anything, diff the resulting HTML) before trusting it fully.
+    - `rewriteAdventureRefs()` now also handles `qid-` (quest-ref) chips from
+      GR's "Insert Quest" slash command, alongside the existing
+      `eid-`/`hid-`/`rtid-` cases — always a plain icon + title label, never an
+      `@UUID` link, since there's no Foundry document a quest item could link
+      to (no "deploy a quest" stage).
+    - `handoutPageContent()` (Stage 11's Handouts → Journal) now runs both
+      rewrites too, instead of passing `handout.body_html` straight through
+      untouched. No cross-module document data is fetched for a handout
+      import, so an embedded encounter-ref/handout-ref/roll-table-ref chip
+      still falls back to its plain-label case there, same as before.
+  - **Still open**: a real click-through of all three dialogs against a live
+    Foundry v14 instance — every tab of the Import Hub, Test Connection, Sync
+    Compendiums — plus the callout-block round-trip test above, before this is
+    trusted in an actual game and `compatibility.verified` gets bumped to `14`.
 - [ ] **Localization scaffolding** (`lang/en.json`) if the module is headed for the
   official package listing.
 

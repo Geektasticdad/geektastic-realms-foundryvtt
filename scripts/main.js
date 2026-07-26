@@ -18,25 +18,34 @@
  * default icon. See Docs/FOUNDRY_API.md and Docs/ROADMAP.md in the geektastic-realms
  * repo for the full API contract and staged plan.
  *
- * Deliberately built against the classic FormApplication/Application v1 API rather
- * than v13's newer ApplicationV2 — v1 remains supported via Foundry's compatibility
- * layer and is the better-documented, less version-fragile choice for a module this
- * small. Revisit if/when ApplicationV2 becomes the only supported path.
+ * Built against ApplicationV2 (v2.0.0) — the v1 FormApplication API this module
+ * originally used is gone entirely in Foundry v14, which only supports
+ * ApplicationV2. All three dialogs (Test Connection, Sync Compendiums, the
+ * consolidated Import Hub) were ported to ApplicationV2's render/parts/action
+ * model; see GrfcApplication below and CHANGELOG.md for what changed. Not yet
+ * live-tested against a real Foundry v14 instance (see ROADMAP.md) — the port
+ * preserves every dialog's HTML-building and jQuery event-wiring code unchanged,
+ * only the outer class-level lifecycle hooks (options/render/event-binding) were
+ * adapted to the new API, but that still needs a real click-through before this
+ * is trusted in an actual game.
  */
 
 const MODULE_ID = 'geektastic-realms-foundry-connect';
 
 /**
- * v13 moved several v1 Application classes under a `foundry.appv1.api` namespace but
- * (as of v13) kept a bare global alias for backward compatibility, with a deprecation
- * warning on use. Rather than hardcode one form and risk breaking on whichever variant
- * a given build doesn't have, resolve defensively at load time: prefer the namespaced
- * class if present (silences the deprecation warning, and keeps working if a future
- * release drops the bare global), falling back to the bare global for older v13
- * builds that predate the namespace. This removes the need to verify which form a
- * live instance expects — both are covered.
+ * Shared ApplicationV2 base for this module's three dialogs. None of them use
+ * Handlebars templates — there's no templates/ directory and no build step, so
+ * each builds its own markup as a plain JS template literal (same approach they
+ * used under the old v1 API) and wires jQuery event handlers onto it in
+ * `_onRender()`. This base supplies the one piece of glue ApplicationV2 needs for
+ * that instead of Handlebars: taking whatever HTML string a subclass's
+ * `_renderHTML()` returns and dropping it into the window's content element.
  */
-const FormApplicationBase = globalThis.foundry?.appv1?.api?.FormApplication ?? globalThis.FormApplication;
+class GrfcApplication extends foundry.applications.api.ApplicationV2 {
+  _replaceHTML(result, content, _options) {
+    content.innerHTML = result;
+  }
+}
 
 /** Entries per POST to /compendium/sync — keeps individual requests small for large packs. */
 const SYNC_CHUNK_SIZE = 100;
@@ -260,10 +269,36 @@ function findModuleJournal(moduleId) {
   return game.journal.find((j) => j.getFlag(MODULE_ID, 'grModuleId') === moduleId) || null;
 }
 
-/** One handout's page content: an uploaded image (if any) above the rich-text body. */
+/**
+ * Empty ref-lookup context for handout bodies — a handout import fetches no
+ * cross-module encounter/roll-table/Actor data (unlike Stage 13's adventure
+ * export), so an encounter-ref/handout-ref/roll-table-ref chip embedded in a
+ * handout body (the same rich-text editor allows it, even if rare in practice)
+ * falls back to its plain-label case rather than resolving to a linked document.
+ * quest-ref needs no ctx at all either way (see rewriteAdventureRefs above).
+ */
+function emptyRefContext() {
+  return {
+    encountersById: new Map(),
+    handoutsById: new Map(),
+    handoutPagesByGrId: new Map(),
+    rollTablesByGrId: new Map(),
+    rollTableTitlesById: new Map(),
+    actorsByEntryId: new Map(),
+  };
+}
+
+/**
+ * One handout's page content: an uploaded image (if any) above the rich-text
+ * body, which is run through the same ref-chip and callout-block rewriting
+ * Stage 13's adventure export uses (rewriteAdventureRefs/rewriteCalloutBlocks,
+ * defined below) — previously this passed handout.body_html straight through
+ * untouched, silently leaving any embedded ref chip or callout div unresolved.
+ */
 function handoutPageContent(handout, imgPath) {
   const imageHtml = imgPath ? `<p><img src="${imgPath}" style="max-width:400px;"></p>` : '';
-  return imageHtml + (handout.body_html || '');
+  const body = rewriteCalloutBlocks(rewriteAdventureRefs(handout.body_html || '', emptyRefContext()));
+  return imageHtml + body;
 }
 
 /**
@@ -416,12 +451,14 @@ function flattenSectionTree(nodes) {
 }
 
 /**
- * Rewrites encounter-ref/handout-ref/roll-table-ref chips already embedded in a
- * section's body_html into links to whatever Stage 10–12 documents already exist
- * for them, using the same eid-/hid-/rtid- class-token trick the web run view's own
- * expand_*_refs() helpers key off (see app/Support/helpers.php in the main repo). A
- * ref with no matching document yet — that stage hasn't been run for this specific
- * item — falls back to a plain, undecorated label instead of a broken link.
+ * Rewrites encounter-ref/handout-ref/roll-table-ref/quest-ref chips already embedded
+ * in a section's body_html into links to whatever Stage 10–12 documents already
+ * exist for them, using the same eid-/hid-/rtid-/qid- class-token trick the web run
+ * view's own expand_*_refs() helpers key off (see app/Support/helpers.php in the
+ * main repo). A ref with no matching document yet — that stage hasn't been run for
+ * this specific item — falls back to a plain, undecorated label instead of a broken
+ * link. quest-ref never has a matching document (there's no "deploy a quest" stage),
+ * so it's always the plain-label case.
  */
 function rewriteAdventureRefs(html, ctx) {
   if (!html) return html;
@@ -458,7 +495,80 @@ function rewriteAdventureRefs(html, ctx) {
     return `<p>🎲 ${label}</p>`;
   });
 
+  // Quest/secret items (GR's "Insert Quest" slash command) have no Foundry-side
+  // document to link to — there's no "deploy a quest" stage the way encounters/
+  // handouts/roll tables have one, so this never produces an @UUID link. The
+  // chip's own inner text is its title (GR always renders one, see questRef's
+  // renderHTML in block-editor.js), so unlike the three cases above this needs no
+  // ctx lookup at all — just the qkind- class token for which icon to show.
+  html = html.replace(/<div\b[^>]*\bclass="([^"]*\bqid-\d+\b[^"]*)"[^>]*>([\s\S]*?)<\/div>/gi, (match, classAttr, inner) => {
+    const kindMatch = classAttr.match(/\bqkind-([a-z]+)\b/);
+    const icon = kindMatch && kindMatch[1] === 'secret' ? '🔍' : '📜';
+    const title = inner.trim() || 'Quest';
+    return `<p>${icon} ${title}</p>`;
+  });
+
   return html;
+}
+
+/**
+ * GR's six custom Tiptap "callout" block types — read-aloud, dm-note,
+ * encounter-block, treasure-block, boxed-text, dm-secret — are all built from one
+ * factory, `makeWrapperNode(name, cssClass)` (geektastic-realms
+ * public/assets/js/block-editor.js:148-168, registered at :272-277), and each
+ * renders as `<div class="{cssClass}">…normal paragraphs/lists…</div>`.
+ *
+ * Foundry v14 drops TinyMCE and makes ProseMirror the only editor for Journal
+ * Entry pages (and other rich-text fields). ProseMirror parses existing HTML
+ * through its own schema when a page is opened for editing — a plain wrapper
+ * `<div class="...">` isn't a node type in that schema, and its default behavior
+ * for an unrecognized element is to recurse into the children and drop the
+ * wrapper itself. That would silently lose which callout type a block was (most
+ * importantly, DM Secret vs. Read Aloud — very different audiences) the first
+ * time a DM opens an imported page in Foundry's own editor to touch it up.
+ *
+ * Rewrites each into a `<blockquote>` — a node ProseMirror's schema does define
+ * — with a bold label identifying the callout type, so the distinction survives
+ * even though the exact original styling doesn't. Best-effort: not yet verified
+ * against a live Foundry v14 instance (see ROADMAP.md), but a labeled blockquote
+ * is a strict improvement over an unlabeled, silently-unwrapped div either way.
+ *
+ * DOM-based (not regex, unlike the ref-chip rewrites above) because these wrapper
+ * nodes hold ordinary block content and Tiptap's schema allows nesting one inside
+ * another (e.g. a boxed-text containing a dm-note) — a naive regex's non-greedy
+ * match would stop at the first nested `</div>` and truncate the outer wrapper.
+ * Foundry's client runs in a real browser, so `DOMParser` is always available.
+ */
+const CALLOUT_LABELS = {
+  'read-aloud': 'Read Aloud',
+  'dm-note': 'DM Note',
+  'encounter-block': 'Encounter',
+  'treasure-block': 'Treasure',
+  'boxed-text': 'Boxed Text',
+  'dm-secret': 'DM Secret — do not reveal to players',
+};
+
+function rewriteCalloutBlocks(html) {
+  if (!html) return html;
+
+  const parsed = new DOMParser().parseFromString(`<div id="grfc-callout-root">${html}</div>`, 'text/html');
+  const root = parsed.getElementById('grfc-callout-root');
+  if (!root) return html;
+
+  for (const [cssClass, label] of Object.entries(CALLOUT_LABELS)) {
+    root.querySelectorAll(`div.${cssClass}`).forEach((el) => {
+      const blockquote = parsed.createElement('blockquote');
+      const labelPara = parsed.createElement('p');
+      const strong = parsed.createElement('strong');
+      strong.textContent = label;
+      labelPara.appendChild(strong);
+      blockquote.appendChild(labelPara);
+      while (el.firstChild) blockquote.appendChild(el.firstChild);
+      el.replaceWith(blockquote);
+    });
+  }
+
+  return root.innerHTML;
 }
 
 /**
@@ -585,7 +695,7 @@ async function importAdventure(moduleId, onProgress) {
   };
 
   onProgress?.('Importing overview…');
-  const overviewContent = rewriteAdventureRefs(prepared.body.module.overview || '', ctx)
+  const overviewContent = rewriteCalloutBlocks(rewriteAdventureRefs(prepared.body.module.overview || '', ctx))
     + relatedEntriesFooter(prepared.body.module_related_entries, ctx.actorsByEntryId);
   tally(await importAdventurePage(journal, 'grPageKind', 'overview', {
     name: prepared.body.module.title,
@@ -599,7 +709,7 @@ async function importAdventure(moduleId, onProgress) {
   for (let i = 0; i < flatSections.length; i++) {
     const section = flatSections[i];
     onProgress?.(`Importing "${section.title}"… (${i + 1}/${flatSections.length})`);
-    const content = rewriteAdventureRefs(section.body_html, ctx)
+    const content = rewriteCalloutBlocks(rewriteAdventureRefs(section.body_html, ctx))
       + relatedEntriesFooter(section.related_entries, ctx.actorsByEntryId);
     tally(await importAdventurePage(journal, 'grSectionId', section.id, {
       name: section.title,
@@ -1175,29 +1285,25 @@ async function createNpcInFoundry(npc, onProgress, folderId, existingActor, sync
 /**
  * Small dialog with a "Test Connection" button, opened from the module settings menu.
  */
-class TestConnectionForm extends FormApplicationBase {
-  static get defaultOptions() {
-    return foundry.utils.mergeObject(super.defaultOptions, {
-      id: 'grfc-test-connection',
-      title: 'Geektastic Realms — Test Connection',
-      width: 420,
-      height: 'auto',
-      closeOnSubmit: false,
-      resizable: false,
-    });
-  }
+class TestConnectionForm extends GrfcApplication {
+  static DEFAULT_OPTIONS = {
+    id: 'grfc-test-connection',
+    tag: 'div',
+    window: { title: 'Geektastic Realms — Test Connection', resizable: false },
+    position: { width: 420, height: 'auto' },
+  };
 
-  getData() {
+  async _prepareContext(_options) {
     return {
       serverUrl: game.settings.get(MODULE_ID, 'serverUrl') || '',
       hasToken: !!game.settings.get(MODULE_ID, 'apiToken'),
     };
   }
 
-  async _renderInner(data) {
-    const serverUrl = escapeHtml(data.serverUrl || '(not set)');
-    const tokenStatus = data.hasToken ? 'configured' : 'not set';
-    const html = `
+  async _renderHTML(context, _options) {
+    const serverUrl = escapeHtml(context.serverUrl || '(not set)');
+    const tokenStatus = context.hasToken ? 'configured' : 'not set';
+    return `
       <form class="grfc-test-connection" style="padding:.5rem;">
         <p style="margin:.25rem 0;">Server URL: <strong>${serverUrl}</strong></p>
         <p style="margin:.25rem 0;">API token: <strong>${tokenStatus}</strong></p>
@@ -1209,11 +1315,11 @@ class TestConnectionForm extends FormApplicationBase {
         </footer>
       </form>
     `;
-    return $(html);
   }
 
-  activateListeners(html) {
-    super.activateListeners(html);
+  _onRender(context, options) {
+    super._onRender(context, options);
+    const html = $(this.element);
     html.find('.grfc-test-btn').on('click', async (event) => {
       event.preventDefault();
       const result = html.find('#grfc-result');
@@ -1239,19 +1345,15 @@ class TestConnectionForm extends FormApplicationBase {
  * click time (not necessarily saved first) so "check a few boxes and go" works in
  * one step.
  */
-class CompendiumSyncForm extends FormApplicationBase {
-  static get defaultOptions() {
-    return foundry.utils.mergeObject(super.defaultOptions, {
-      id: 'grfc-compendium-sync',
-      title: 'Geektastic Realms — Sync Compendiums',
-      width: 480,
-      height: 'auto',
-      closeOnSubmit: false,
-      resizable: true,
-    });
-  }
+class CompendiumSyncForm extends GrfcApplication {
+  static DEFAULT_OPTIONS = {
+    id: 'grfc-compendium-sync',
+    tag: 'div',
+    window: { title: 'Geektastic Realms — Sync Compendiums', resizable: true },
+    position: { width: 480, height: 'auto' },
+  };
 
-  getData() {
+  async _prepareContext(_options) {
     const selected = new Set(game.settings.get(MODULE_ID, 'syncPacks') || []);
     return {
       packs: itemPacks().map((p) => ({
@@ -1262,9 +1364,9 @@ class CompendiumSyncForm extends FormApplicationBase {
     };
   }
 
-  async _renderInner(data) {
-    const rows = data.packs.length
-      ? data.packs.map((p) => `
+  async _renderHTML(context, _options) {
+    const rows = context.packs.length
+      ? context.packs.map((p) => `
           <label style="display:flex;align-items:center;gap:.5rem;padding:.2rem 0;">
             <input type="checkbox" class="grfc-pack-check" value="${escapeHtml(p.id)}" ${p.checked ? 'checked' : ''}>
             ${escapeHtml(p.label)}
@@ -1272,7 +1374,7 @@ class CompendiumSyncForm extends FormApplicationBase {
         `).join('')
       : '<p>No Item-type compendium packs found in this world.</p>';
 
-    const html = `
+    return `
       <form class="grfc-compendium-sync" style="padding:.5rem;">
         <p style="margin:.25rem 0 .5rem;color:var(--color-text-dark-secondary,#666);">
           Choose which compendiums to sync to Geektastic Realms. Only Item-type packs
@@ -1290,11 +1392,11 @@ class CompendiumSyncForm extends FormApplicationBase {
         </footer>
       </form>
     `;
-    return $(html);
   }
 
-  activateListeners(html) {
-    super.activateListeners(html);
+  _onRender(context, options) {
+    super._onRender(context, options);
+    const html = $(this.element);
     html.find('.grfc-sync-btn').on('click', async (event) => {
       event.preventDefault();
       const checked = html.find('.grfc-pack-check:checked').map((_, el) => el.value).get();
@@ -1332,38 +1434,31 @@ class CompendiumSyncForm extends FormApplicationBase {
  * a session, not one-time configuration, so Settings now only holds Server URL/API
  * Token/Test Connection/Sync Compendiums, which really are settings.
  *
- * Tab switching is a small self-contained click handler in activateListeners() below
- * (a v1.7.0 build tried FormApplication's built-in `options.tabs` binding instead —
+ * Tab switching is a small self-contained click handler in _onRender() below (a
+ * v1.7.0 build tried FormApplication's built-in `options.tabs` binding instead —
  * clicking a nav item never actually switched panels, so this replaced it rather than
- * chase why). Every tab's markup and behavior is the exact same code the five
- * original dialogs had — only the outer shell changed, so this should behave
- * identically to before, just reachable from one place with five tabs instead of five
- * menu entries. Each tab's DOM
- * queries are scoped to that tab's own container (a `tab` jQuery element passed into
- * every method below), never the whole dialog — several tabs reuse the same class
- * names (e.g. `.grfc-module-select` appears in four different tabs), so scoping is
- * what keeps them from colliding now that they all live in one document at once
- * (classic Application tabs hide inactive panels with CSS, not by removing them from
- * the DOM, so all five tabs' elements exist simultaneously, even hidden).
+ * chase why; ApplicationV2 has its own tabs mechanism too, not used here for the same
+ * reason). Every tab's markup and behavior is the exact same code the five original
+ * dialogs had — only the outer shell changed (v1.7.0's FormApplication → v2.0.0's
+ * ApplicationV2), so this should behave identically to before, just reachable from
+ * one place with five tabs instead of five menu entries. Each tab's DOM queries are
+ * scoped to that tab's own container (a `tab` jQuery element passed into every method
+ * below), never the whole dialog — several tabs reuse the same class names (e.g.
+ * `.grfc-module-select` appears in four different tabs), so scoping is what keeps
+ * them from colliding now that they all live in one document at once (inactive tabs
+ * are hidden with CSS, not removed from the DOM, so all five tabs' elements exist
+ * simultaneously, even hidden).
  */
-class ImportHubForm extends FormApplicationBase {
-  static get defaultOptions() {
-    return foundry.utils.mergeObject(super.defaultOptions, {
-      id: 'grfc-import-hub',
-      title: 'Geektastic Realms',
-      width: 680,
-      height: 640,
-      closeOnSubmit: false,
-      resizable: true,
-    });
-  }
+class ImportHubForm extends GrfcApplication {
+  static DEFAULT_OPTIONS = {
+    id: 'grfc-import-hub',
+    tag: 'div',
+    window: { title: 'Geektastic Realms', resizable: true },
+    position: { width: 680, height: 640 },
+  };
 
-  getData() {
-    return {};
-  }
-
-  async _renderInner() {
-    const html = `
+  async _renderHTML(_context, _options) {
+    return `
       <form class="grfc-import-hub" style="display:flex;flex-direction:column;height:100%;box-sizing:border-box;">
         <style>
           /* Defensive fallback in case core Foundry CSS doesn't reach this dialog for
@@ -1397,17 +1492,18 @@ class ImportHubForm extends FormApplicationBase {
         </section>
       </form>
     `;
-    return $(html);
   }
 
-  activateListeners(html) {
-    super.activateListeners(html);
+  _onRender(context, options) {
+    super._onRender(context, options);
+    const html = $(this.element);
 
     // Explicit, self-contained tab switching — not FormApplication's built-in
     // options.tabs binding, which turned out not to actually switch panels (clicking
     // a nav item never changed what was shown). Click a nav item, show its matching
     // .tab panel via an inline style toggle (not just a CSS class, so this doesn't
-    // depend on any core stylesheet being present), hide the rest.
+    // depend on any core stylesheet being present), hide the rest. Unaffected by the
+    // ApplicationV2 port — never depended on the v1 tabs binding to begin with.
     const navItems = html.find('.grfc-hub-tabs .item');
     const panels = html.find('.grfc-hub-content > .tab');
     navItems.on('click', (event) => {
@@ -2223,7 +2319,7 @@ function addImportHubButton(html) {
   );
   button.on('click', (event) => {
     event.preventDefault();
-    new ImportHubForm().render(true);
+    new ImportHubForm().render({ force: true });
   });
 
   const actions = $html.find('.directory-header .action-buttons');
