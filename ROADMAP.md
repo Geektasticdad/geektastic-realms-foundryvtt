@@ -34,8 +34,9 @@ RollTables), and 13 (Adventure → Journal export) are now **✅ confirmed worki
 live world** too. Known debts, in rough order of risk:
 
 - v14 compatibility: the ApplicationV2 migration and ProseMirror-safety fixes shipped
-  in v2.0.0 (Stage 15), but neither has been live-tested against a real Foundry v14
-  instance yet — `compatibility.verified` stays at `13` until that happens.
+  in v2.0.0 (Stage 15); `compatibility.verified` is now `14` (v2.0.2) on the strength
+  of real Actors-tab usage, but the other four Import Hub tabs, the two settings
+  dialogs, and the callout-block round-trip haven't been specifically confirmed yet.
 
 ---
 
@@ -74,12 +75,10 @@ Quality-of-life once the feature set stabilizes:
   fallback server-side, so the module doesn't need its own fallback logic). Applied
   on both Create and Update, touching only the texture — every other prototype token
   setting is left alone, same as before.
-- [x] **ApplicationV2 migration + v14 compatibility (v2.0.0, live verification
-  still open)** — migrated off the v1 `FormApplication` API, which Foundry v14
-  removes entirely. `compatibility.verified` stays `"13"` in `module.json` —
-  ApplicationV2 already works on v13 (that's what made doing this ahead of v14's
-  forcing deadline possible), and `verified` isn't bumped to `14` until this is
-  actually tested there.
+- [x] **ApplicationV2 migration + v14 compatibility (v2.0.0, `compatibility.verified`
+  bumped to `"14"` in v2.0.2)** — migrated off the v1 `FormApplication` API, which
+  Foundry v14 removes entirely. `compatibility.minimum` stays `"13"` — ApplicationV2
+  already worked there too, so v13 installs are unaffected.
   - Scope: the new shared `GrfcApplication` base (`scripts/main.js`, extends
     `foundry.applications.api.ApplicationV2`) is extended by the same three
     classes that used to extend `FormApplicationBase` — `TestConnectionForm`,
@@ -113,10 +112,11 @@ Quality-of-life once the feature set stabilizes:
       untouched. No cross-module document data is fetched for a handout
       import, so an embedded encounter-ref/handout-ref/roll-table-ref chip
       still falls back to its plain-label case there, same as before.
-  - **Still open**: a real click-through of all three dialogs against a live
-    Foundry v14 instance — every tab of the Import Hub, Test Connection, Sync
-    Compendiums — plus the callout-block round-trip test above, before this is
-    trusted in an actual game and `compatibility.verified` gets bumped to `14`.
+  - **Still open**: the Actors tab has had real v14 usage (surfaced and fixed a
+    layout bug in v2.0.1). The other four Import Hub tabs, Test Connection, Sync
+    Compendiums, and the callout-block round-trip test above haven't been
+    specifically confirmed yet — worth a pass through each before assuming
+    everything behaves identically to the pre-v2.0.0 dialogs.
 - [ ] **Localization scaffolding** (`lang/en.json`) if the module is headed for the
   official package listing.
 

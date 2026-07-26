@@ -9,7 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.0.2] - 2026-07-26
+
+### Changed
+- **`compatibility.verified` bumped to `"14"`** in `module.json` (was `"13"`) —
+  the ApplicationV2 migration and Actors tab have seen real use in a v14 world.
+  `compatibility.minimum` stays `"13"`; nothing here requires v14 specifically.
+
 ## [2.0.1] - 2026-07-26
+
+### Fixed
 
 ### Fixed
 - **Actors tab: search box was tiny, category dropdown took up most of the
