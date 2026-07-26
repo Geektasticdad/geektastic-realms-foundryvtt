@@ -75,7 +75,50 @@ Quality-of-life once the feature set stabilizes:
   setting is left alone, same as before.
 - [ ] **ApplicationV2 migration + v14 compatibility** — migrate off the v1
   `FormApplication` API when v14's deprecation pressure makes it worthwhile; bump
-  `compatibility.verified` after real testing.
+  `compatibility.verified` after real testing (currently `"minimum": "13",
+  "verified": "13"` in `module.json`, no `maximum`).
+  - Scope: `FormApplicationBase` (`scripts/main.js:39`, resolves
+    `foundry.appv1.api.FormApplication ?? FormApplication`) is extended by exactly
+    three classes — `TestConnectionForm` (`:1178`), `CompendiumSyncForm` (`:1242`),
+    and the consolidated `ImportHubForm` (`:1349`, Stage 15's 5-tab hub: actors /
+    encounters / handouts / tables / adventure). Migrating means porting these
+    three to ApplicationV2's render/parts/action model — not five separate
+    dialogs, since Stage 15 already consolidated them into one.
+  - **Reminder — Foundry v14 removes TinyMCE; ProseMirror becomes the only
+    supported rich-text editor** for Journal Entry pages (and other HTML
+    fields). GR itself isn't changing — it stays on Tiptap — this is purely
+    about what happens on the Foundry side to the HTML this module writes.
+    `TextEditor.enrichHTML` renders raw HTML fine regardless of editor, so
+    first-view display isn't the risk; the risk is the moment a DM opens an
+    imported page in Foundry's own page editor to tweak it — ProseMirror parses
+    the existing HTML through its own schema, and content it doesn't recognize
+    doesn't survive that round-trip.
+    - GR's editor has six custom "callout" block types built from one factory,
+      `makeWrapperNode(name, cssClass)` (`geektastic-realms/public/assets/js/
+      block-editor.js:148-168`): `read-aloud`, `dm-note`, `encounter-block`,
+      `treasure-block`, `boxed-text`, `dm-secret` (registered at `:272-277`).
+      Each renders as `<div class="{cssClass}">...normal paragraphs/lists...
+      </div>` — a plain wrapper `<div>` is not a node type in ProseMirror's
+      schema, and ProseMirror's default behavior for an unrecognized element is
+      to recurse into its children and drop the wrapper. Expected outcome: the
+      inner text likely survives a Foundry-side edit + save, but the callout's
+      distinguishing class/styling likely doesn't — **needs an actual test**
+      (import a page with each callout type, open it in Foundry's v14 editor,
+      save without changing anything, diff the resulting HTML) rather than
+      assuming either way.
+    - `rewriteAdventureRefs()` (`scripts/main.js:426-462`, used by Stage 13's
+      Adventure → Journal export) rewrites `eid-`/`hid-`/`rtid-` chips into
+      `@UUID` links but has **no handling for `qid-` (quest-ref)** — GR's newer
+      "Insert Quest" slash command chips pass through unrewritten today. Add a
+      `qid-{N}`/`qkind-{quest|secret}` case alongside the existing three, or
+      explicitly log it as a known gap if descoped. (`@UUID` links are
+      Foundry-native anchor syntax once rewritten, so they're not a ProseMirror
+      compatibility risk the way the callout `<div>`s above are.)
+    - `handoutPageContent()` (`scripts/main.js:264-266`, Stage 11's Handouts →
+      Journal) passes `handout.body_html` straight through with **no
+      ref-rewriting at all** — same callout-block survival question applies
+      here too if a handout body uses one of GR's six callout types, plus the
+      same unhandled `qid-` gap if a handout ever embeds a quest-ref.
 - [ ] **Localization scaffolding** (`lang/en.json`) if the module is headed for the
   official package listing.
 
