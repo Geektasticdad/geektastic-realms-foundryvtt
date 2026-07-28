@@ -9,6 +9,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.1.0] - 2026-07-28
+
+### Added
+- **Structured Activities on Features & Weapons (Stage 16, GR Roadmap 2.8).** A
+  fresh-created (unmatched) Feature or Weapon that carries DM-entered structured
+  Activities on the Geektastic Realms side (Attack/Check/Damage/Heal/Save) now
+  gets a real `system.activities` entry — a clickable, rollable button on the
+  Actor sheet — instead of description text only. Feature Details carry through
+  too: required level/repeatable (`system.prerequisites`), Magical/Trait
+  properties (`system.properties` — **not** "Passive," which dnd5e derives
+  automatically from an activity having no activation cost), and a limited-uses
+  pool (`system.uses`, shared by features and items — e.g. a wand's charges).
+  Compendium-matched features/items keep their own activities exactly as-is,
+  same "trust the compendium match" rule already used for icons/item typing.
+- **Auto-generated Cast activities.** Once spell cloning finishes, the
+  fresh-created Spellcasting feature (if any) gets one Cast activity per cloned
+  spell, each pointing at that spell's own real Foundry UUID — pick the feature
+  on the Actor sheet to cast any of the creature's spells from one place. GR
+  itself never sends Cast activities (deliberately excluded from its
+  `activity_type` enum); this is generated entirely module-side.
+- New helpers in `scripts/main.js`: `buildActivities()`/`activityData()` (GR's
+  flat activity rows → a real dnd5e Activity data object per type),
+  `parseDamageFormula()` (a DM-typed `"2d6 + 4"` string → dnd5e's structured
+  damage-part shape, falling back to dnd5e's own custom-formula field for
+  anything more complex), `castActivityData()`, and `usesData()`.
+
+**Not yet live-tested against a real Foundry v14 world** — this is a best-effort
+translation of dnd5e's real Activity/Cast schema (mirrors GR's own PHP-side
+builder in `App\Support\FoundryExport`, so the two independent implementations
+of the same target shape need to be kept in sync by hand), not independently
+re-verified against dnd5e source for this pass. Worth rolling a generated
+attack/save/damage/heal button and a Cast activity once against a real Actor
+sheet before trusting this at the table — see ROADMAP.md Stage 16's "Live
+verification" checklist item.
+
 ## [2.0.2] - 2026-07-26
 
 ### Changed
@@ -552,7 +587,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   response).
 - Verified against Foundry VTT v13. Not yet tested against v14.
 
-[Unreleased]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v1.5.0...HEAD
+[Unreleased]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.1.0...HEAD
+[2.1.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.0.2...v2.1.0
 [1.5.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v1.2.1...v1.3.0

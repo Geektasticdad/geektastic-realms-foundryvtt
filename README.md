@@ -156,6 +156,17 @@ feature/item's **Icon** field on Geektastic Realms, and gets accurate Foundry it
 typing where GR's data supports it. Progress is shown live per step (actor, then
 features/icons, then equipment/icons, then spells).
 
+If a feature or weapon has one or more **Activities** set up on the Geektastic Realms
+side (Stage 16 — Attack/Check/Damage/Heal/Save), an unmatched one arrives as a real,
+clickable rollable button on the Actor sheet instead of description text only, and a
+feature's **Required level**/**Repeatable**/**Magical**/**Trait**/limited-uses fields
+carry through too. A feature or weapon you've confirmed a compendium match for keeps
+that compendium entry's own activities exactly as-is — GR-entered Activities only
+apply to the fresh-created (unmatched) path, same as icons and item typing above. This
+is a best-effort translation of Foundry's Activity schema, not independently
+verified against a live Foundry v14 world — worth rolling a generated attack/save/
+damage button once to confirm it works as expected before trusting it at the table.
+
 If the stat block has a **Spell list** set up on the Geektastic Realms side (Stage 14),
 any spell name that exactly matches a spell in your synced compendiums is cloned onto
 the Actor as a real, rollable spell Item too, and the Actor's spellcasting ability
@@ -172,6 +183,14 @@ summary text. The stat block's free-text "Spellcasting" trait still imports as a
 regular feature either way, unaffected — if both are filled in, you'll see two
 "Spellcasting"-ish features on the Actor until that trait is cleaned up on the
 Geektastic Realms side.
+
+Once every spell is cloned, the fresh-created Spellcasting feature (if any) gets one
+auto-generated **Cast** activity per cloned spell — pick that feature on the Actor
+sheet to cast any of the creature's spells right from it, instead of hunting each
+spell down in the sidebar individually. Nothing to set up on the Geektastic Realms
+side for this — it's entirely automatic once spells clone successfully. A
+compendium-matched Spellcasting feature keeps its own activities as-is, same as any
+other compendium-matched feature/item.
 
 If the DM set a **Spellcaster level** (1-20), it's applied to the Actor's automatic
 spell-slot table. If the DM checked any **Save prof.** boxes on the ability scores

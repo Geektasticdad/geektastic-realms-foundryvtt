@@ -132,51 +132,55 @@ confirmed: a dedicated token image (different from the stat block's own portrait
 used for the token on both Create and re-sync Update, and clearing the token image
 falls back to the portrait image on re-sync, exactly as designed.
 
-## Stage 16 — Structured Activities on Features & Weapons
+## Stage 16 — Structured Activities on Features & Weapons ✅ code shipped (v2.1.0; live verification still open)
 
 *Makes a synced Feature/Weapon actually rollable instead of inert flavor text.*
 
-- [ ] GR dependency: Roadmap 2.8 (`stat_block_activities` table, Feature Detail
+- [x] GR dependency: Roadmap 2.8 (`stat_block_activities` table, Feature Detail
       columns, new fields on the `/api/foundry/v1/npc/{entryId}/prepare` payload —
-      see that repo's ROADMAP.md for the full field list).
-- [ ] `featureItemData()`/`equipmentItemData()` (`scripts/main.js:860-871`/
-      `944-969`) gain an `activities` param — build the full `system.activities`
-      map as plain data and bake it directly into the item payload passed to
+      see that repo's ROADMAP.md for the full field list). Shipped in GR v2.0.0.
+- [x] `featureItemData()`/`equipmentItemData()` gain the new GR fields and bake a
+      real `system.activities` map directly into the item payload passed to
       `Item.create()`/`addItemToActor()`, per dnd5e's real schema (no
       `createEmbeddedDocuments('Activity', …)` — activities are a keyed map on
-      `system`, not an embedded-document collection). New shared
-      `buildActivities(rows)` helper converts GR's flat activity rows into
-      per-type `system.activities.{id}` objects (Attack/Cast/Check/Damage/Heal/
-      Save), generating ids via `foundry.utils.randomID()`.
-- [ ] New `parseDamageFormula(text)` helper (mirrors the existing
+      `system`, not an embedded-document collection). Shared `buildActivities(rows)`
+      helper converts GR's flat activity rows into per-type
+      `system.activities.{id}` objects (Attack/Check/Damage/Heal/Save + the
+      separate Cast builder below), generating ids via `foundry.utils.randomID()`.
+- [x] New `parseDamageFormula(text)` helper (mirrors the existing
       `parseMovement()`/`parseSenses()` free-text-parsing convention) — turns a
       DM-typed `"2d6 + 4"` string into dnd5e's structured damage-part shape
-      (`{number, denomination, bonus, types}`).
-- [ ] Feature Details: `system.type.value` stays hardcoded `'monster'` (already
-      correct, no change); add `system.prerequisites.{level, repeatable}` and
+      (`{number, denomination, bonus, types}`), falling back to dnd5e's own
+      custom-formula field for anything that isn't a simple `NdM [+/- bonus]`.
+- [x] Feature Details: `system.type.value` stays hardcoded `'monster'` (no
+      change); added `system.prerequisites.{level, repeatable}` and
       `system.properties` (`['mgc']`/`['trait']` per the new GR flags — **not**
       "Passive," which dnd5e derives automatically from an activity having no
       activation type) and `system.uses` from the new GR fields.
-- [ ] **Compendium-matched items keep their own activities as-is** — GR-specified
+- [x] **Compendium-matched items keep their own activities as-is** — GR-specified
       activities only apply to the fresh-create (unmatched) path, consistent with
       the existing "trust the compendium match" philosophy already used for
       icons/full item shape elsewhere in this module.
-- [ ] **Cast activities**: after the existing spell-cloning loop in
-      `createNpcInFoundry()` finishes, if a feature is the designated spellcasting
-      feature (`feature_type === 'spellcasting'`) and carries no manually-defined
-      Cast activities of its own, auto-create one Cast activity per cloned spell
-      Item, each pointing at that spell's real Foundry UUID
-      (`spell.uuid`). Sequenced after Attack/Damage/Save/Check/Heal since it
-      depends on spells already existing as real Items — can ship as a follow-up
-      point release if it needs more runway than the rest.
-- [ ] Live verification: import a feature with an Attack activity (e.g. "Bite: +5
-      to hit, 1d6+3 piercing"), a Save-based action (e.g. a breath weapon, "DC 15
-      Dex save, half damage"), and a weapon with a Damage activity; confirm each
-      rolls correctly from the Actor sheet in a real Foundry v14 world. Separately
-      verify the auto-generated Cast activities on a spellcaster's Innate
-      Spellcasting feature actually cast the linked spell.
+- [x] **Cast activities**: after the spell-cloning loop in `createNpcInFoundry()`
+      finishes, the fresh-created (unmatched) spellcasting feature — tracked while
+      the features loop runs — gets one auto-generated Cast activity per cloned
+      spell Item, each pointing at that spell's real Foundry UUID (`spell.uuid`).
+      GR itself never sends Cast activities (`stat_block_activities.activity_type`
+      deliberately excludes `cast`), so there's nothing DM-entered to preserve —
+      only the general compendium-match rule applies (a matched spellcasting
+      feature is skipped, same as everything else).
+- [ ] **Live verification** (not yet done — no live Foundry v14 world available in
+      this pass): import a feature with an Attack activity (e.g. "Bite: +5 to hit,
+      1d6+3 piercing"), a Save-based action (e.g. a breath weapon, "DC 15 Dex save,
+      half damage"), and a weapon with a Damage activity; confirm each rolls
+      correctly from the Actor sheet. Separately verify the auto-generated Cast
+      activities on a spellcaster's Innate Spellcasting feature actually cast the
+      linked spell. This is a best-effort translation of dnd5e's real Activity
+      schema (not independently re-verified against source for this pass, unlike
+      the original Stage 8-14 builds) — treat every field name here as "worth
+      double-checking" until a live run confirms it.
 
-**GR dependency:** Roadmap 2.8 — not yet shipped.
+**GR dependency:** Roadmap 2.8 — shipped in GR v2.0.0.
 
 ---
 
@@ -187,4 +191,5 @@ Stage 8 gates everything (verify before building). Stages 9 → 10 are strictly 
 of 10, but all three precede 13. Stages 14–16 float — schedule opportunistically
 alongside GR-side releases, matching the milestone table in the main repo's
 [ROADMAP.md](https://github.com/Geektasticdad/geektastic-realms/blob/main/ROADMAP.md).
-Stage 16 additionally depends on GR Roadmap 2.8 shipping first.
+Stage 16's GR dependency (Roadmap 2.8) shipped in GR v2.0.0; only its own live
+verification remains open.

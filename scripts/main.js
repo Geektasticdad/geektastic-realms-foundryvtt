@@ -28,6 +28,18 @@
  * only the outer class-level lifecycle hooks (options/render/event-binding) were
  * adapted to the new API, but that still needs a real click-through before this
  * is trusted in an actual game.
+ *
+ * Stage 16 (GR Roadmap 2.8): a fresh-created (unmatched) feature/weapon that
+ * carries DM-entered structured Activities (Attack/Check/Damage/Heal/Save) now
+ * gets a real `system.activities` map instead of description text only, plus
+ * Feature Details (`system.prerequisites`, `system.properties`, `system.uses`) —
+ * see `buildActivities()`/`activityData()`/`featureItemData()`/`equipmentItemData()`.
+ * A spellcasting feature also gets one auto-generated Cast activity per spell
+ * cloned onto the Actor, once cloning finishes — see the Cast-activity block in
+ * `createNpcInFoundry()`. Best-effort schema translation, not independently
+ * verified against a live Foundry v14 world for this pass (same caveat as the
+ * ApplicationV2 port above) — spot-check a rolled activity and a generated Cast
+ * button against a real Actor sheet before trusting this at the table.
  */
 
 const MODULE_ID = 'geektastic-realms-foundry-connect';
@@ -851,23 +863,238 @@ async function resolveCompendiumItem(compendiumRef) {
  * creates a fresh Item from GR's data via Foundry's own Item.create() — which fills in
  * every schema default itself, so there's no need to hand-construct a fully-shaped
  * Foundry document the way the static export (FoundryExport::toActorArray in GR) has to.
+ * @returns {Promise<Item>} the created (or cloned) Item document, so callers that need
+ *   to reference it further (Stage 16's Cast-activity step) don't have to re-look it up.
  */
 async function addItemToActor(actor, compendiumRef, freshItemData) {
   const cloned = await resolveCompendiumItem(compendiumRef);
-  await actor.createEmbeddedDocuments('Item', [cloned || freshItemData]);
+  const [created] = await actor.createEmbeddedDocuments('Item', [cloned || freshItemData]);
+  return created;
 }
 
+/** Foundry dnd5e skill abbreviations (matches GR's App\Support\StatBlock5e::SKILL_ABBR values). */
+const SKILL_ABBRS = new Set([
+  'acr', 'ani', 'arc', 'ath', 'dec', 'his', 'ins', 'itm', 'inv',
+  'med', 'nat', 'prc', 'prf', 'per', 'rel', 'slt', 'ste', 'sur',
+]);
+
+/**
+ * Turns a DM-typed damage/healing formula ("2d6 + 4") into dnd5e's structured
+ * DamageField shape (Stage 16). Only a simple "NdM [+/- bonus]" pattern is decomposed
+ * into number/denomination/bonus; anything else (multiple dice terms, a flat number,
+ * free text) is passed through verbatim via dnd5e's own custom-formula escape hatch
+ * rather than guessed at — mirrors GR's own PHP-side parser
+ * (App\Support\FoundryExport::parseDamagePart()).
+ * @param {string} formula
+ * @param {?string} damageType - a dnd5e damage-type key ('fire', 'slashing', …), or
+ *   'healing' for a Heal activity's formula; omitted for Check activities (n/a).
+ */
+function parseDamageFormula(formula, damageType) {
+  const text = String(formula ?? '').trim();
+  const types = damageType ? [damageType] : [];
+  const m = /^(\d+)\s*d\s*(\d+)\s*([+-]\s*\d+)?$/i.exec(text);
+  if (m) {
+    return {
+      number: Number(m[1]),
+      denomination: Number(m[2]),
+      bonus: m[3] ? m[3].replace(/\s+/g, '') : '',
+      types,
+      custom: { enabled: false, formula: '' },
+    };
+  }
+  return { number: null, denomination: null, bonus: '', types, custom: { enabled: true, formula: text } };
+}
+
+/**
+ * One stat_block_activities row (GR's flat shape — see the Stage 5 prepare payload's
+ * features[].activities[]/items[].activities[], GR's FoundryExport::toPreparePayload(),
+ * Roadmap 2.8) -> one dnd5e Activity data object (sans `_id`, added by buildActivities()
+ * below). Best-effort translation of dnd5e's real Activity schema — mirrors GR's own
+ * PHP-side builder (App\Support\FoundryExport::activityData(), used by GR's static
+ * export) so the two independent implementations of the same target shape stay in sync
+ * by hand; worth spot-checking a rolled activity against a real Actor sheet after
+ * import, same as every other best-effort schema mapping in this module
+ * (spellcastingBonuses(), applySpellUsage()).
+ * @param {object} row
+ */
+function activityData(row) {
+  const type = row.activity_type || 'attack';
+  const activationType = row.activation_type || 'action';
+  const rangeValue = row.range_value != null && !Number.isNaN(Number(row.range_value)) ? Number(row.range_value) : null;
+
+  const base = {
+    type,
+    activation: {
+      // 'none' means passive (no activation cost) — dnd5e derives the "Passive"
+      // display automatically from this, no property flag needed.
+      type: activationType === 'none' ? '' : activationType,
+      value: row.activation_value ?? null,
+      condition: '',
+    },
+    duration: { value: '', units: 'inst', concentration: false, special: '' },
+    range: { value: rangeValue, units: row.range_units || 'ft', special: '' },
+    target: {
+      template: { count: '', contiguous: false, type: '', size: '', width: '', height: '', units: 'ft' },
+      affects: { count: row.target_count || '', type: row.target_type || '', choice: false, special: '' },
+      prompt: true,
+    },
+    uses: { spent: 0, max: '', recovery: [] },
+    name: row.name || '',
+    img: '',
+    sort: 0,
+  };
+
+  switch (type) {
+    case 'attack':
+      return {
+        ...base,
+        attack: {
+          ability: row.ability || '',
+          bonus: row.attack_bonus || '',
+          critical: { threshold: null, damage: '' },
+          flat: false,
+          type: { value: row.attack_type || '', classification: 'weapon' },
+        },
+        damage: {
+          critical: { bonus: '' },
+          includeBase: true,
+          parts: row.damage_formula ? [parseDamageFormula(row.damage_formula, row.damage_type)] : [],
+        },
+      };
+    case 'save':
+      return {
+        ...base,
+        save: {
+          ability: row.save_ability ? [row.save_ability] : [],
+          dc: { calculation: '', formula: row.save_dc != null ? String(row.save_dc) : '' },
+        },
+        damage: {
+          onSave: row.save_effect === 'half' ? 'half' : 'none',
+          parts: row.damage_formula ? [parseDamageFormula(row.damage_formula, row.damage_type)] : [],
+        },
+      };
+    case 'check':
+      return {
+        ...base,
+        check: {
+          ability: row.ability || '',
+          // Only wired when it's already a recognized Foundry skill abbreviation —
+          // a free-text tool name has no resolvable Foundry key without compendium
+          // matching, so it's left for the activity's own `name` label instead.
+          associated: row.check_skill_or_tool && SKILL_ABBRS.has(row.check_skill_or_tool) ? [row.check_skill_or_tool] : [],
+          dc: { calculation: '', formula: row.check_dc != null ? String(row.check_dc) : '' },
+        },
+      };
+    case 'heal':
+      return { ...base, healing: parseDamageFormula(row.damage_formula || '', 'healing') };
+    default: // 'damage' — a plain Damage activity, no attack roll or save attached.
+      return {
+        ...base,
+        damage: {
+          critical: { bonus: '' },
+          parts: row.damage_formula ? [parseDamageFormula(row.damage_formula, row.damage_type)] : [],
+        },
+      };
+  }
+}
+
+/**
+ * Converts GR's flat activity rows into a real dnd5e `system.activities` map, keyed
+ * by a fresh `foundry.utils.randomID()` per row (Stage 16). `system.activities` is a
+ * plain keyed map, not an embedded-document collection — no
+ * `createEmbeddedDocuments('Activity', …)` call, this is baked directly into the item
+ * data passed to `Item.create()`/`addItemToActor()`.
+ * @param {object[]} rows
+ * @returns {object}
+ */
+function buildActivities(rows) {
+  const out = {};
+  for (const row of rows || []) {
+    const id = foundry.utils.randomID();
+    out[id] = { _id: id, ...activityData(row) };
+  }
+  return out;
+}
+
+/**
+ * A Cast activity for one auto-cloned spell (Stage 16), pointing at that spell Item's
+ * own real Foundry UUID rather than a formula/damage of its own — dnd5e resolves the
+ * spell's own casting time/range/damage/save from the linked Item at roll time.
+ * Appended onto the spellcasting feature after spell cloning (see
+ * createNpcInFoundry()); this is the highest-uncertainty piece of Stage 16's schema
+ * mapping (not independently re-verified against a live world for this pass), so
+ * spot-check that a generated Cast button actually casts the linked spell.
+ * @param {string} id
+ * @param {Item} spellItem - the already-created spell Item document on this actor
+ */
+function castActivityData(id, spellItem) {
+  return {
+    _id: id,
+    type: 'cast',
+    activation: { type: '', value: null, condition: '' },
+    duration: { value: '', units: 'inst', concentration: false, special: '' },
+    range: { value: null, units: '', special: '' },
+    target: {
+      template: { count: '', contiguous: false, type: '', size: '', width: '', height: '', units: 'ft' },
+      affects: { count: '', type: '', choice: false, special: '' },
+      prompt: true,
+    },
+    uses: { spent: 0, max: '', recovery: [] },
+    name: '',
+    img: '',
+    sort: 0,
+    spell: {
+      uuid: spellItem.uuid,
+      ability: '',
+      challenge: { attack: null, save: null },
+      properties: [],
+    },
+  };
+}
+
+/**
+ * @param {object} feature - one npc.features[] entry from the Stage 5 prepare payload
+ * @param {?string} imgPath
+ */
 function featureItemData(feature, imgPath) {
+  const properties = [];
+  if (feature.is_magical) properties.push('mgc');
+  if (feature.is_trait) properties.push('trait');
+
   const data = {
     name: feature.name,
     type: 'feat',
     system: {
       description: { value: feature.description || '' },
+      // Feature Type stays hardcoded 'monster' — GR is exclusively a monster/NPC
+      // stat block tool, no DM-facing Class/Background/Race subtype applies.
       type: { value: 'monster' },
+      // Stage 16 (Roadmap 2.8): required level / repeatable / Magical & Trait
+      // properties / limited uses. Deliberately no "Passive" property — dnd5e
+      // derives that display automatically from a feature having no activity with
+      // an activation cost, so there's nothing to set for it.
+      prerequisites: { items: [], repeatable: !!feature.repeatable, level: feature.level ?? null },
+      properties,
+      uses: usesData(feature.uses),
+      activities: buildActivities(feature.activities),
     },
   };
   if (imgPath) data.img = imgPath;
   return data;
+}
+
+/**
+ * `system.uses` (a feature's or item's limited-uses pool — Stage 16/Roadmap 2.8),
+ * shared by featureItemData()/equipmentItemData(). `max` stays a string since dnd5e
+ * accepts a formula there (e.g. "1d4"), not just a flat number.
+ * @param {?{max: ?string, recovery_period: ?string}} uses
+ */
+function usesData(uses) {
+  return {
+    spent: 0,
+    max: uses?.max ?? '',
+    recovery: uses?.recovery_period ? [{ period: uses.recovery_period, type: 'recoverAll', formula: '' }] : [],
+  };
 }
 
 /**
@@ -961,6 +1188,11 @@ function equipmentItemData(item, imgPath) {
       unidentified: { description: '' },
       properties: isMagic ? ['mgc'] : [],
       type: { value: subtype.value, [subtype.key]: '' },
+      // Stage 16 (Roadmap 2.8): limited uses (e.g. a wand's charges) + structured
+      // Activities (Attack/Check/Damage/Heal/Save), so an unmatched weapon/item
+      // arrives with a real rollable button instead of description text only.
+      uses: usesData(item.uses),
+      activities: buildActivities(item.activities),
     },
   };
   if (foundryType === 'equipment') data.system.armor = { value: null, dex: null };
@@ -1222,6 +1454,12 @@ async function createNpcInFoundry(npc, onProgress, folderId, existingActor, sync
   }
 
   const features = npc.features || [];
+  // Stage 16: the fresh-created (unmatched) spellcasting feature, if any — tracked so
+  // each cloned spell below can get its own Cast activity appended to it. A
+  // compendium-matched spellcasting feature keeps its own activities as-is, the same
+  // "trust the compendium match" rule this module already applies to icons/full item
+  // shape elsewhere, so this only ever gets set on the unmatched path.
+  let spellcastingFeatureItem = null;
   for (let i = 0; i < features.length; i++) {
     onProgress?.(`Adding features/actions… (${i + 1}/${features.length})`);
     let imgPath = null;
@@ -1229,7 +1467,10 @@ async function createNpcInFoundry(npc, onProgress, folderId, existingActor, sync
       onProgress?.(`Uploading icon… (${i + 1}/${features.length})`);
       imgPath = await uploadIconToFoundry(features[i].icon_media_id, iconCache);
     }
-    await addItemToActor(actor, features[i].compendium_ref, featureItemData(features[i], imgPath));
+    const created = await addItemToActor(actor, features[i].compendium_ref, featureItemData(features[i], imgPath));
+    if (features[i].type === 'spellcasting' && !features[i].compendium_ref) {
+      spellcastingFeatureItem = created;
+    }
   }
 
   const items = npc.items || [];
@@ -1263,12 +1504,14 @@ async function createNpcInFoundry(npc, onProgress, folderId, existingActor, sync
   // matching compendium spell later if they want it to roll natively.
   const spells = npc.spells || [];
   let unmatchedSpells = 0;
+  const clonedSpellItems = [];
   for (let i = 0; i < spells.length; i++) {
     onProgress?.(`Adding spells… (${i + 1}/${spells.length})`);
     const cloned = await resolveCompendiumItem(spells[i].compendium_ref);
     if (cloned) {
       applySpellUsage(cloned, spells[i]);
-      await actor.createEmbeddedDocuments('Item', [cloned]);
+      const [created] = await actor.createEmbeddedDocuments('Item', [cloned]);
+      clonedSpellItems.push(created);
     } else {
       unmatchedSpells++;
     }
@@ -1277,6 +1520,26 @@ async function createNpcInFoundry(npc, onProgress, folderId, existingActor, sync
     ui.notifications.warn(
       `Geektastic Realms Foundry Connect: ${unmatchedSpells} spell${unmatchedSpells === 1 ? '' : 's'} on "${npc.name}" had no exact compendium match and were not added as items — the free-text Spellcasting trait still has them.`
     );
+  }
+
+  // Stage 16: one auto-generated Cast activity per cloned spell, appended onto the
+  // fresh-created spellcasting feature (see the features loop above), each pointing
+  // at that spell Item's own real Foundry UUID. GR never sends Cast activities itself
+  // — stat_block_activities' activity_type enum deliberately excludes 'cast' (see GR's
+  // migration 0079) — so there's nothing DM-entered to preserve or skip here.
+  // Sequenced after spell cloning since it depends on the spells already existing as
+  // real Items with real UUIDs. Best-effort schema (see activityData()'s doc comment)
+  // — not independently re-verified against a live world for this pass; spot-check
+  // that a generated Cast button actually casts the linked spell after import.
+  if (spellcastingFeatureItem && clonedSpellItems.length) {
+    onProgress?.('Adding Cast activities…');
+    const castActivities = {};
+    for (const spellItem of clonedSpellItems) {
+      const id = foundry.utils.randomID();
+      castActivities[id] = castActivityData(id, spellItem);
+    }
+    const existingRaw = spellcastingFeatureItem.toObject().system?.activities || {};
+    await spellcastingFeatureItem.update({ 'system.activities': { ...existingRaw, ...castActivities } });
   }
 
   return actor;
