@@ -49,7 +49,7 @@ token placement), Handouts → Journal, Roll Tables → native RollTables, Adven
 Journal export, and spellcasting fidelity (summary feature, spell cloning, caster
 level, save proficiencies).
 
-## Stage 15 — UX & platform ✅ partially shipped (v1.7.1, unverified)
+## Stage 15 — UX & platform ✅ partially shipped (v1.7.1–v2.0.2)
 
 Quality-of-life once the feature set stabilizes:
 
@@ -112,24 +112,25 @@ Quality-of-life once the feature set stabilizes:
       untouched. No cross-module document data is fetched for a handout
       import, so an embedded encounter-ref/handout-ref/roll-table-ref chip
       still falls back to its plain-label case there, same as before.
-  - **Still open**: the Actors tab has had real v14 usage (surfaced and fixed a
-    layout bug in v2.0.1). The other four Import Hub tabs, Test Connection, Sync
-    Compendiums, and the callout-block round-trip test above haven't been
-    specifically confirmed yet — worth a pass through each before assuming
-    everything behaves identically to the pre-v2.0.0 dialogs.
+  - **Confirmed**: all five Import Hub tabs (not just Actors) click through
+    correctly and match their old standalone-dialog behavior, and the Journal
+    directory-header button opens the hub the same as the Actors one — see the
+    "Move entry points"/"Token image support" verification note below.
+  - **Still open**: Test Connection and Sync Compendiums (the two remaining
+    `GrfcApplication` dialogs, reached from Settings rather than a directory
+    header button) and the callout-block ProseMirror round-trip test above
+    haven't been specifically confirmed yet.
 - [ ] **Localization scaffolding** (`lang/en.json`) if the module is headed for the
   official package listing.
 
 **GR dependency:** `stat_blocks.token_media_id` and `token_media_id` on
-`GET /api/foundry/v1/npc/{entryId}/prepare` — ✅ shipped (GR v1.30.0). **Verification:**
-opening the hub from the Actors directory-header button and seeing all five tabs is
-**✅ confirmed** (the bug report that led to v1.7.1). Still open: re-confirm tab
-switching actually works now (click through all five, not just Actors), confirm the
-Journal directory-header button too, and confirm each tab's behavior matches its old
-standalone dialog. Separately, set a dedicated token image on a stat block with a
-different image than its portrait, create/re-sync its Actor, and confirm the token
-(not just the portrait) uses that image; then clear the token image and confirm
-re-syncing falls back to the portrait image for the token too.
+`GET /api/foundry/v1/npc/{entryId}/prepare` — ✅ shipped (GR v1.30.0). **Verification:
+✅ confirmed** — tab switching works correctly across all five Import Hub tabs (not
+just Actors), the Journal directory-header button opens the hub the same as the
+Actors one, and each tab's behavior matches its old standalone dialog. Separately
+confirmed: a dedicated token image (different from the stat block's own portrait) is
+used for the token on both Create and re-sync Update, and clearing the token image
+falls back to the portrait image on re-sync, exactly as designed.
 
 ## Stage 16 — Structured Activities on Features & Weapons
 
