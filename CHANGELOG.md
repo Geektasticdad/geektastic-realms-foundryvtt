@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.1.1] - 2026-07-28
+
+### Added
+- **Multi-part damage on Activities.** An Attack/Save/Damage activity can now
+  carry more than one damage part — e.g. a poisoned dagger's Attack activity
+  with both `1d4` piercing (the weapon) and `3d6` poison (the coating) — instead
+  of only one, matching dnd5e's real `damage.parts[]` array (already a list on
+  the Foundry side; GR just wasn't filling it with more than one entry yet). New
+  `parseDamageParts()` helper maps GR's `activities[].damage_parts[]` (GR
+  Roadmap 2.8 follow-up) through the existing `parseDamageFormula()` per part. A
+  Heal activity's `healing` field stays a single value either way — dnd5e models
+  it as one formula, not a list — so only the first damage part is used there.
+
 ## [2.1.0] - 2026-07-28
 
 ### Added
@@ -587,7 +600,8 @@ verification" checklist item.
   response).
 - Verified against Foundry VTT v13. Not yet tested against v14.
 
-[Unreleased]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.1.0...HEAD
+[Unreleased]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.1.1...HEAD
+[2.1.1]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.0.2...v2.1.0
 [1.5.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v1.3.0...v1.4.0

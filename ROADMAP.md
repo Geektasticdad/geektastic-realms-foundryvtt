@@ -169,6 +169,13 @@ falls back to the portrait image on re-sync, exactly as designed.
       deliberately excludes `cast`), so there's nothing DM-entered to preserve —
       only the general compendium-match rule applies (a matched spellcasting
       feature is skipped, same as everything else).
+- [x] **Multi-part damage (v2.1.1)** — an Attack/Save/Damage activity's
+      `damage.parts[]` can now hold more than one entry (e.g. a poisoned dagger's
+      `1d4` piercing plus `3d6` poison), via GR's own multi-part follow-up
+      (`activities[].damage_parts[]` on the prepare payload). New
+      `parseDamageParts()` maps each part through `parseDamageFormula()`. A Heal
+      activity still only ever uses the first part, since dnd5e's `healing` field
+      is a single value, not an array.
 - [ ] **Live verification** (not yet done — no live Foundry v14 world available in
       this pass): import a feature with an Attack activity (e.g. "Bite: +5 to hit,
       1d6+3 piercing"), a Save-based action (e.g. a breath weapon, "DC 15 Dex save,

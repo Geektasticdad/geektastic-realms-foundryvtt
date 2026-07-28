@@ -906,6 +906,20 @@ function parseDamageFormula(formula, damageType) {
 }
 
 /**
+ * Multi-part damage follow-up (Roadmap 2.8): maps every damage part on an
+ * activity — e.g. a poisoned dagger's "1d4" piercing plus "3d6" poison — through
+ * parseDamageFormula(), building dnd5e's `damage.parts[]` array in the DM's own
+ * entered order. Mirrors GR's PHP-side `FoundryExport::parseDamageParts()`.
+ * @param {object[]} parts - list of { formula, damage_type }
+ * @returns {object[]}
+ */
+function parseDamageParts(parts) {
+  return (parts || [])
+    .filter((p) => p && String(p.formula ?? '').trim() !== '')
+    .map((p) => parseDamageFormula(p.formula, p.damage_type));
+}
+
+/**
  * One stat_block_activities row (GR's flat shape — see the Stage 5 prepare payload's
  * features[].activities[]/items[].activities[], GR's FoundryExport::toPreparePayload(),
  * Roadmap 2.8) -> one dnd5e Activity data object (sans `_id`, added by buildActivities()
@@ -944,6 +958,8 @@ function activityData(row) {
     sort: 0,
   };
 
+  const parts = parseDamageParts(row.damage_parts);
+
   switch (type) {
     case 'attack':
       return {
@@ -958,7 +974,7 @@ function activityData(row) {
         damage: {
           critical: { bonus: '' },
           includeBase: true,
-          parts: row.damage_formula ? [parseDamageFormula(row.damage_formula, row.damage_type)] : [],
+          parts,
         },
       };
     case 'save':
@@ -970,7 +986,7 @@ function activityData(row) {
         },
         damage: {
           onSave: row.save_effect === 'half' ? 'half' : 'none',
-          parts: row.damage_formula ? [parseDamageFormula(row.damage_formula, row.damage_type)] : [],
+          parts,
         },
       };
     case 'check':
@@ -986,13 +1002,16 @@ function activityData(row) {
         },
       };
     case 'heal':
-      return { ...base, healing: parseDamageFormula(row.damage_formula || '', 'healing') };
+      // dnd5e's Heal activity has a single `healing` field, not a parts[] array —
+      // only the first damage part is meaningful here (matches GR's own
+      // StatBlockActivityDamagePart doc comment on this same limitation).
+      return { ...base, healing: parts.length ? parts[0] : parseDamageFormula('', 'healing') };
     default: // 'damage' — a plain Damage activity, no attack roll or save attached.
       return {
         ...base,
         damage: {
           critical: { bonus: '' },
-          parts: row.damage_formula ? [parseDamageFormula(row.damage_formula, row.damage_type)] : [],
+          parts,
         },
       };
   }
