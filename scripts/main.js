@@ -2778,33 +2778,49 @@ Hooks.on('renderActorDirectory', (app, html) => addImportHubButton(html));
 Hooks.on('renderJournalDirectory', (app, html) => addImportHubButton(html));
 
 /**
- * Adds an "Archive Chat" button to the chat sidebar's controls row (Roadmap 2.9),
- * opening ArchiveChatForm above. Targets `#chat-controls`/`.chat-controls`, with a
- * fallback of appending directly to the passed-in element if neither is found —
- * same defensive shape as addImportHubButton()'s directory-header fallback, and
- * likewise not verified against a live world: worth confirming this selector and
- * the `renderChatLog` hook itself still match on the target Foundry version.
+ * Adds an "Archive Chat" button to the chat sidebar (Roadmap 2.9), opening
+ * ArchiveChatForm. Unlike addImportHubButton() (whose directory only (re)renders
+ * on meaningful changes), `renderChatLog` fires very frequently — every new
+ * message, tab switch, popout, etc. — so this guards against re-adding a button
+ * that's already present in this render, and prepends rather than appends so the
+ * button can't end up visually hidden below a sticky/fixed message-input bar at
+ * the bottom of the sidebar. Click handling is delegated on `document` (see
+ * below the hook registration), not bound directly to each button instance —
+ * that instance (and its handler) gets destroyed every time Foundry re-renders
+ * the chat log out from under it, which was the actual bug: the button stayed
+ * visible but a stale/detached copy is what a click could land on, so nothing
+ * happened. Targets `#chat-controls`/`.chat-controls` first, with a few more
+ * candidate selectors as fallback since Foundry v13+ reworked the sidebar to
+ * ApplicationV2 and the exact structure isn't confirmed against a live world.
  */
 function addArchiveChatButton(html) {
   const $html = html instanceof jQuery ? html : $(html);
+  if ($html.find('.grfc-archive-chat-button').length) {
+    return;
+  }
 
   const button = $(
     '<button type="button" class="grfc-archive-chat-button" title="Archive this world\'s chat log to Geektastic Realms"><i class="fas fa-box-archive"></i> Archive Chat</button>'
   );
-  button.on('click', (event) => {
-    event.preventDefault();
-    new ArchiveChatForm().render({ force: true });
-  });
 
-  const controls = $html.find('#chat-controls, .chat-controls');
+  const controls = $html.find('#chat-controls, .chat-controls, .chat-form, form.chat-form').first();
   if (controls.length) {
-    controls.append(button);
+    controls.prepend(button);
   } else {
-    $html.append(button);
+    $html.prepend(button);
   }
 }
 
 Hooks.on('renderChatLog', (app, html) => addArchiveChatButton(html));
+
+// Delegated on `document` (bound once, not per-render) so a click on whichever
+// .grfc-archive-chat-button instance is currently in the DOM always opens the
+// dialog, even though renderChatLog's frequent re-renders keep destroying and
+// recreating that button — a handler bound directly to one instance dies with it.
+$(document).on('click', '.grfc-archive-chat-button', (event) => {
+  event.preventDefault();
+  new ArchiveChatForm().render({ force: true });
+});
 
 Hooks.once('ready', () => {
   console.log(`${MODULE_ID} | ready`);

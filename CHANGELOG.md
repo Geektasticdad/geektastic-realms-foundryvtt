@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.2.1] - 2026-07-29
+
+### Fixed
+- **"Archive Chat" button didn't respond to clicks.** `renderChatLog` fires very
+  frequently (every new message, tab switches, popouts, etc.), and each firing
+  created a fresh button with its own directly-bound click handler and no
+  duplicate-guard — Foundry's own re-render could destroy that button (and its
+  handler) out from under the user between paint and click, with nothing landing
+  in the console since it's not a JS error, just a dead DOM node. Click handling
+  is now delegated on `document` (bound once, not per-render), so any current
+  `.grfc-archive-chat-button` reliably opens `ArchiveChatForm` regardless of how
+  many times the chat log re-renders. Also added a duplicate-guard (skip if a
+  button is already present in this render) and switched from appending to
+  prepending the button, so it can't end up visually hidden below a sticky
+  message-input bar at the bottom of the sidebar.
+
 ## [2.2.0] - 2026-07-28
 
 ### Added
