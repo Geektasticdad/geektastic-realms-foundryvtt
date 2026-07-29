@@ -226,13 +226,28 @@ async function fetchModulePrepare(moduleId) {
  * history — not verified against a real long-running world (see ROADMAP.md).
  * Deliberately does not fall back to raw `.content` reconstruction if the count
  * looks short, since that would defeat the fidelity this exists for.
+ *
+ * Each message is captured from a detached clone, not the live element — a
+ * clone lets `<img>` `src` attributes be rewritten to absolute URLs (icons,
+ * portraits, item art) before serializing to a string, without touching what's
+ * actually on screen. Foundry's own chat markup uses paths relative to this
+ * world's own server (e.g. `icons/svg/mystery-man.svg`), which only resolve
+ * correctly there — once the archive is viewed from GR's own domain, a
+ * relative path 404s and shows as a broken image. Reading the `.src` *property*
+ * (not the `src` *attribute*) is what does the rewriting: browsers always
+ * resolve that property to a fully-qualified URL against the current page,
+ * regardless of what the original attribute text was.
  */
 function captureChatLogHtml() {
   const messages = ui.chat?.element ? $(ui.chat.element).find('li.chat-message') : $();
-  return {
-    html: messages.map((_, el) => el.outerHTML).get().join('\n'),
-    messageCount: messages.length,
-  };
+  const html = messages.map((_, el) => {
+    const clone = el.cloneNode(true);
+    clone.querySelectorAll('img[src]').forEach((img) => {
+      img.setAttribute('src', img.src);
+    });
+    return clone.outerHTML;
+  }).get().join('\n');
+  return { html, messageCount: messages.length };
 }
 
 /** Posts a captured chat log archive to GR, scoped to a module (Roadmap 2.9). Unattached to any session — attaching happens later from GR's web UI. */

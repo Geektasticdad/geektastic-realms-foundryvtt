@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.2.2] - 2026-07-29
+
+### Fixed
+- **Archived chat logs showed broken images.** `captureChatLogHtml()` read each
+  message's raw `outerHTML`, which carries Foundry's own relative image paths
+  (e.g. `icons/svg/mystery-man.svg`) — those only resolve against this world's
+  own server, not wherever the archive is later viewed in GR. Capture now
+  clones each message and rewrites every `<img>`'s `src` to a fully-resolved
+  absolute URL first (reading the `.src` DOM property, which the browser always
+  resolves to absolute, rather than the raw attribute text), so portraits and
+  item icons survive being viewed from a different domain. Requires
+  Geektastic Realms v2.1.1+ (`Sanitizer::cleanChatArchive()`'s allow-list fix)
+  for roll cards and target lists to render correctly too — see that repo's
+  CHANGELOG. Existing archives aren't retroactively fixed; re-archive to pick
+  this up.
+
 ## [2.2.1] - 2026-07-29
 
 ### Fixed
