@@ -214,6 +214,42 @@ async function fetchModulePrepare(moduleId) {
   return apiFetch(`/api/foundry/v1/modules/${moduleId}/prepare`);
 }
 
+/**
+ * Reads the chat sidebar's currently-rendered DOM (Roadmap 2.9: Foundry Chat
+ * Archive) — each message's own outerHTML, in order — rather than reconstructing
+ * markup from each ChatMessage's `.content`. This preserves the exact on-screen
+ * structure/classes (dice-roll cards included) with no re-implementation of
+ * Foundry's own chat-message rendering.
+ *
+ * Only captures messages currently present in the sidebar's DOM, which may be
+ * fewer than `game.messages.size` if Foundry virtualizes/paginates a long
+ * history — not verified against a real long-running world (see ROADMAP.md).
+ * Deliberately does not fall back to raw `.content` reconstruction if the count
+ * looks short, since that would defeat the fidelity this exists for.
+ */
+function captureChatLogHtml() {
+  const messages = ui.chat?.element ? $(ui.chat.element).find('li.chat-message') : $();
+  return {
+    html: messages.map((_, el) => el.outerHTML).get().join('\n'),
+    messageCount: messages.length,
+  };
+}
+
+/** Posts a captured chat log archive to GR, scoped to a module (Roadmap 2.9). Unattached to any session — attaching happens later from GR's web UI. */
+async function archiveChatLog(moduleId, { title, playedOn, description, html, messageCount }) {
+  return apiFetch(`/api/foundry/v1/modules/${moduleId}/chat-archives`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      title,
+      played_on: playedOn || '',
+      description: description || '',
+      body_html: html || '',
+      message_count: messageCount,
+    }),
+  });
+}
+
 /** MIME type -> file extension, for icons downloaded from GR's media library. */
 const ICON_MIME_EXT = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif' };
 
@@ -1622,6 +1658,129 @@ class TestConnectionForm extends GrfcApplication {
 }
 
 /**
+ * Archive the current world's chat log into Geektastic Realms (Roadmap 2.9),
+ * scoped to a Module the DM picks. Archive-first, attach-later — this dialog
+ * never asks which Session Log entry the archive belongs to; that's set later
+ * from GR's own "Chat Archives" tab.
+ *
+ * The optional "delete all chat messages after archiving" checkbox only ever
+ * fires after (a) the archive POST succeeds, and (b) a *second*, separate
+ * confirmation dialog — an irreversible bulk delete never rides on one checkbox
+ * click alone.
+ */
+class ArchiveChatForm extends GrfcApplication {
+  static DEFAULT_OPTIONS = {
+    id: 'grfc-archive-chat',
+    tag: 'div',
+    window: { title: 'Geektastic Realms — Archive Chat', resizable: false },
+    position: { width: 460, height: 'auto' },
+  };
+
+  async _renderHTML(_context, _options) {
+    return `
+      <form class="grfc-archive-chat" style="padding:.5rem;">
+        <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.6rem;">
+          <label style="white-space:nowrap;color:var(--color-text-dark-secondary,#666);font-size:.85em;">Module:</label>
+          <select class="grfc-archive-module-select" style="flex:1 1 auto;min-width:0;" disabled>
+            <option value="">Loading modules…</option>
+          </select>
+        </div>
+        <div style="margin-bottom:.5rem;">
+          <label style="display:block;font-size:.85em;color:var(--color-text-dark-secondary,#666);margin-bottom:.15rem;">Title</label>
+          <input type="text" class="grfc-archive-title" style="width:100%;" placeholder="Session 12: The Sunken Vault">
+        </div>
+        <div style="display:flex;gap:.5rem;margin-bottom:.5rem;">
+          <div style="flex:1;">
+            <label style="display:block;font-size:.85em;color:var(--color-text-dark-secondary,#666);margin-bottom:.15rem;">Date of Session</label>
+            <input type="date" class="grfc-archive-played-on" style="width:100%;">
+          </div>
+        </div>
+        <div style="margin-bottom:.5rem;">
+          <label style="display:block;font-size:.85em;color:var(--color-text-dark-secondary,#666);margin-bottom:.15rem;">Description</label>
+          <textarea class="grfc-archive-description" rows="3" style="width:100%;resize:vertical;"></textarea>
+        </div>
+        <label style="display:flex;align-items:center;gap:.4rem;margin-bottom:.5rem;font-size:.9em;">
+          <input type="checkbox" class="grfc-archive-delete-after">
+          Delete all chat messages after archiving
+        </label>
+        <p id="grfc-archive-result" style="min-height:1.4em;font-weight:600;margin:.5rem 0 .25rem;"></p>
+        <footer style="display:flex;justify-content:flex-end;gap:.5rem;margin-top:.5rem;">
+          <button type="button" class="grfc-archive-btn">
+            <i class="fas fa-box-archive"></i> Archive
+          </button>
+        </footer>
+      </form>
+    `;
+  }
+
+  _onRender(context, options) {
+    super._onRender(context, options);
+    const html = $(this.element);
+    const result = html.find('#grfc-archive-result');
+
+    populateModuleSelect(
+      html.find('.grfc-archive-module-select'),
+      result,
+      'No adventure modules found in this Geektastic Realms world.',
+      'Pick a module and fill in the details below.'
+    );
+
+    html.find('.grfc-archive-btn').on('click', async (event) => {
+      event.preventDefault();
+
+      const moduleId = html.find('.grfc-archive-module-select').val();
+      const title = html.find('.grfc-archive-title').val().trim();
+      if (!moduleId) {
+        result.text('Choose a module first.').css('color', '#c62828');
+        return;
+      }
+      if (!title) {
+        result.text('Title is required.').css('color', '#c62828');
+        return;
+      }
+
+      const playedOn = html.find('.grfc-archive-played-on').val();
+      const description = html.find('.grfc-archive-description').val().trim();
+      const deleteAfter = html.find('.grfc-archive-delete-after').is(':checked');
+
+      result.text('Capturing chat log…').css('color', '');
+      const { html: chatHtml, messageCount } = captureChatLogHtml();
+
+      result.text(`Archiving ${messageCount} message(s)…`).css('color', '');
+      const outcome = await archiveChatLog(moduleId, {
+        title, playedOn, description, html: chatHtml, messageCount,
+      });
+
+      if (!outcome.ok) {
+        result.text(`✘ ${outcome.error}`).css('color', '#c62828');
+        ui.notifications.error(`Geektastic Realms Foundry Connect: ${outcome.error}`);
+        return;
+      }
+
+      result.text(`✔ Archived ${messageCount} message(s) to Geektastic Realms.`).css('color', '#2e7d32');
+      ui.notifications.info('Geektastic Realms Foundry Connect: chat log archived.');
+
+      if (!deleteAfter) {
+        return;
+      }
+
+      const confirmed = await foundry.applications.api.DialogV2.confirm({
+        window: { title: 'Delete Chat Messages' },
+        content: `<p>Chat archive saved. Permanently delete all ${messageCount} message(s) from this world's chat log? This cannot be undone.</p>`,
+        rejectClose: false,
+        modal: true,
+      });
+      if (!confirmed) {
+        return;
+      }
+
+      await ChatMessage.deleteDocuments(Array.from(game.messages).map((m) => m.id));
+      ui.notifications.info('Geektastic Realms Foundry Connect: chat log cleared.');
+    });
+  }
+}
+
+/**
  * Choose which Item-type compendium packs to sync, and sync them. Selection is
  * persisted to the `syncPacks` world setting; syncing reads whatever is checked at
  * click time (not necessarily saved first) so "check a few boxes and go" works in
@@ -2617,6 +2776,35 @@ function addImportHubButton(html) {
 
 Hooks.on('renderActorDirectory', (app, html) => addImportHubButton(html));
 Hooks.on('renderJournalDirectory', (app, html) => addImportHubButton(html));
+
+/**
+ * Adds an "Archive Chat" button to the chat sidebar's controls row (Roadmap 2.9),
+ * opening ArchiveChatForm above. Targets `#chat-controls`/`.chat-controls`, with a
+ * fallback of appending directly to the passed-in element if neither is found —
+ * same defensive shape as addImportHubButton()'s directory-header fallback, and
+ * likewise not verified against a live world: worth confirming this selector and
+ * the `renderChatLog` hook itself still match on the target Foundry version.
+ */
+function addArchiveChatButton(html) {
+  const $html = html instanceof jQuery ? html : $(html);
+
+  const button = $(
+    '<button type="button" class="grfc-archive-chat-button" title="Archive this world\'s chat log to Geektastic Realms"><i class="fas fa-box-archive"></i> Archive Chat</button>'
+  );
+  button.on('click', (event) => {
+    event.preventDefault();
+    new ArchiveChatForm().render({ force: true });
+  });
+
+  const controls = $html.find('#chat-controls, .chat-controls');
+  if (controls.length) {
+    controls.append(button);
+  } else {
+    $html.append(button);
+  }
+}
+
+Hooks.on('renderChatLog', (app, html) => addArchiveChatButton(html));
 
 Hooks.once('ready', () => {
   console.log(`${MODULE_ID} | ready`);

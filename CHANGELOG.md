@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.2.0] - 2026-07-28
+
+### Added
+- **Archive Chat (GR Roadmap 2.9).** A new "Archive Chat" button in the chat
+  sidebar's controls row opens a dialog to snapshot this world's entire chat
+  log — narration, dice-roll cards, and all — into Geektastic Realms, scoped to
+  a module. The dialog collects a Module, Title, optional Date of Session,
+  optional Description, and an optional "delete all chat messages after
+  archiving" checkbox. Archiving is captured from the chat sidebar's rendered
+  DOM (`captureChatLogHtml()`, each message's own `outerHTML`) rather than
+  reconstructed from `ChatMessage.content`, to preserve exact on-screen
+  formatting. The archive is **not** attached to a session at creation time —
+  that happens later from GR's own "Chat Archives" tab. Deleting the world's
+  chat messages afterward requires its own separate confirmation beyond the
+  checkbox, and only fires once the archive has actually saved successfully —
+  see `ArchiveChatForm` in `scripts/main.js`.
+
 ## [2.1.1] - 2026-07-28
 
 ### Added

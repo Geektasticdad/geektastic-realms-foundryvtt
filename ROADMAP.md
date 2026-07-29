@@ -191,12 +191,46 @@ falls back to the portrait image on re-sync, exactly as designed.
 
 ---
 
+## Stage 17 — Foundry Chat Archive ✅ code shipped (v2.2.0; live verification still open)
+
+*The session actually happened in this world's chat log. Give the DM a one-click way to
+carry it into Geektastic Realms before it's gone.*
+
+- [x] `captureChatLogHtml()` — reads the chat sidebar's rendered DOM (each
+      `li.chat-message`'s own `outerHTML`, in order), not a reconstruction from
+      `ChatMessage.content`, so on-screen formatting (dice-roll cards included)
+      survives untouched.
+- [x] `ArchiveChatForm` (new `ApplicationV2` dialog, same shape as
+      `TestConnectionForm`) — Module/Title/Date of Session/Description fields plus
+      a "delete all chat messages after archiving" checkbox. POSTs to GR's new
+      `POST /api/foundry/v1/modules/{moduleId}/chat-archives` (reuses the existing
+      `foundry` token scope — no new scope needed).
+- [x] `renderChatLog` hook + `addArchiveChatButton()` — adds an "Archive Chat"
+      button to the chat sidebar's controls row, same defensive-selector-fallback
+      shape as `addImportHubButton()`'s directory-header button.
+- [x] Delete-after-archive safety: the checkbox alone never deletes anything — a
+      *second*, separate `DialogV2.confirm()` is required, and only appears after
+      the archive POST has actually succeeded.
+- [ ] **Live verification** (not yet done — no live Foundry v14 world available in
+      this pass): confirm the `#chat-controls`/`.chat-controls` selector and the
+      `renderChatLog` hook actually fire and place the button somewhere sensible;
+      confirm `captureChatLogHtml()` captures a long/scrolled chat history
+      completely rather than only what's currently rendered/paginated; confirm the
+      bulk `ChatMessage.deleteDocuments()` call clears the log for every connected
+      client, not just the GM; spot-check the GR-side stylesheet's visual fidelity
+      against a real chat log with dice-roll cards.
+
+**GR dependency:** Roadmap 2.9 — shipped in GR v2.1.0.
+
+---
+
 ## Sequencing
 
 Stage 8 gates everything (verify before building). Stages 9 → 10 are strictly ordered
 (encounter deploy reuses re-sync). Stages 11 and 12 are independent of each other and
-of 10, but all three precede 13. Stages 14–16 float — schedule opportunistically
+of 10, but all three precede 13. Stages 14–17 float — schedule opportunistically
 alongside GR-side releases, matching the milestone table in the main repo's
 [ROADMAP.md](https://github.com/Geektasticdad/geektastic-realms/blob/main/ROADMAP.md).
 Stage 16's GR dependency (Roadmap 2.8) shipped in GR v2.0.0; only its own live
-verification remains open.
+verification remains open. Stage 17 floats independently of Stage 16, gated only on
+GR's Roadmap 2.9 shipping first (it has, in GR v2.1.0).
