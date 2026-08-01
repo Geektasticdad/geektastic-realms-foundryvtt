@@ -130,6 +130,11 @@ function itemPacks() {
   return game.packs.filter((p) => p.documentName === 'Item');
 }
 
+/** Actor-type compendium packs available in this world — for the "Import monsters from Foundry" tab. */
+function actorPacks() {
+  return game.packs.filter((p) => p.documentName === 'Actor');
+}
+
 /**
  * Syncs the given packs to Geektastic Realms, chunked per pack. Calls onProgress with
  * a short status string after each chunk so the dialog can show live progress.
@@ -172,6 +177,60 @@ async function syncCompendiums(packIds, onProgress) {
   }
 
   return { ok: true, totalSynced };
+}
+
+/**
+ * Entries per POST to /compendium/import-actors — smaller than SYNC_CHUNK_SIZE since
+ * each actor's payload (full system data plus every embedded Item) is much heavier
+ * than compendium sync's raw index-entry passthrough.
+ */
+const IMPORT_ACTORS_CHUNK_SIZE = 25;
+
+/**
+ * Serializes one Actor document (plus its embedded Items) into the payload shape
+ * POST /api/foundry/v1/compendium/import-actors expects — mirrors
+ * resolveCompendiumItem()'s `source.toObject()` pattern, extended to also carry the
+ * Actor's embedded Items (which toObject() alone may not include, depending on
+ * Foundry version) so GR's FoundryActorImportMapper sees the full stat block.
+ */
+function serializeActorForImport(actor) {
+  const data = actor.toObject();
+  const items = Array.isArray(data.items) && data.items.length > 0
+    ? data.items
+    : (actor.items?.map((i) => i.toObject()) ?? []);
+  return { name: data.name, img: data.img ?? null, system: data.system ?? null, items };
+}
+
+/**
+ * Bulk-imports the given Actor documents into a GR category (Roadmap 3.5 —
+ * "import monsters from a Foundry compendium" instead of a GR-bundled dataset),
+ * chunked per request. Calls onProgress with a short status string after each chunk.
+ * @returns {Promise<{ok: true, created: number, skipped: number, failed: number} | {ok: false, error: string}>}
+ */
+async function importActorsToGr(categoryId, actors, onProgress) {
+  let created = 0;
+  let skipped = 0;
+  let failed = 0;
+
+  for (let i = 0; i < actors.length; i += IMPORT_ACTORS_CHUNK_SIZE) {
+    const chunk = actors.slice(i, i + IMPORT_ACTORS_CHUNK_SIZE);
+    onProgress?.(`Importing ${Math.min(i + chunk.length, actors.length)}/${actors.length}…`);
+
+    const result = await apiFetch('/api/foundry/v1/compendium/import-actors', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ category_id: Number(categoryId), actors: chunk.map(serializeActorForImport) }),
+    });
+
+    if (!result.ok) {
+      return { ok: false, error: result.error };
+    }
+    created += result.body.created ?? 0;
+    skipped += result.body.skipped ?? 0;
+    failed += result.body.failed ?? 0;
+  }
+
+  return { ok: true, created, skipped, failed };
 }
 
 /** Fetches the list of stat-block-bearing entries available to create as NPCs (Stage 5). */
@@ -1928,6 +1987,7 @@ class ImportHubForm extends GrfcApplication {
           <a class="item" data-tab="handouts"><i class="fas fa-book-open"></i> Handouts</a>
           <a class="item" data-tab="tables"><i class="fas fa-dice-d20"></i> Tables</a>
           <a class="item" data-tab="adventure"><i class="fas fa-scroll"></i> Adventure</a>
+          <a class="item" data-tab="bestiary"><i class="fas fa-dragon"></i> Bestiary</a>
         </nav>
         <section class="grfc-hub-content" style="flex:1 1 auto;overflow:hidden;padding-top:.5rem;">
           <div class="tab active" data-tab="actors" style="height:100%;display:flex;flex-direction:column;box-sizing:border-box;padding:0 .25rem;">
@@ -1944,6 +2004,9 @@ class ImportHubForm extends GrfcApplication {
           </div>
           <div class="tab" data-tab="adventure" style="height:100%;display:flex;flex-direction:column;box-sizing:border-box;padding:0 .25rem;">
             ${this._adventureTabHtml()}
+          </div>
+          <div class="tab" data-tab="bestiary" style="height:100%;display:flex;flex-direction:column;box-sizing:border-box;padding:0 .25rem;">
+            ${this._bestiaryTabHtml()}
           </div>
         </section>
       </form>
@@ -1982,6 +2045,7 @@ class ImportHubForm extends GrfcApplication {
     this._handoutsActivate(html.find('.grfc-hub-content > [data-tab="handouts"]'), modulesPromise);
     this._tablesActivate(html.find('.grfc-hub-content > [data-tab="tables"]'), modulesPromise);
     this._adventureActivate(html.find('.grfc-hub-content > [data-tab="adventure"]'), modulesPromise);
+    this._bestiaryActivate(html.find('.grfc-hub-content > [data-tab="bestiary"]'));
   }
 
   // ── Actors (Stage 5/9: create/re-sync an Actor from any GR stat block) ──────
@@ -2696,6 +2760,190 @@ class ImportHubForm extends GrfcApplication {
     } finally {
       importBtn.prop('disabled', false);
     }
+  }
+
+  // ── Bestiary (Roadmap 3.5: import monsters from a Foundry compendium) ──────
+  //
+  // Unlike the other four tabs ("pick a GR module → import everything in it"),
+  // this one sources data the other direction: pick an Actor-type compendium
+  // pack already in this world (the DM's own dnd5e SRD monsters, or any other
+  // bestiary compendium they trust) and a target GR category, then check which
+  // creatures to send. Combines two existing patterns rather than inventing a
+  // third: CompendiumSyncForm's checkbox-list-with-filter (the only existing
+  // per-item picker in this module) for selection, and the other hub tabs'
+  // "import → N created/M skipped/K failed summary" style for the result.
+
+  _bestiaryTabHtml() {
+    return `
+      <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.5rem;">
+        <label style="white-space:nowrap;color:var(--color-text-dark-secondary,#666);font-size:.85em;">Compendium:</label>
+        <select class="grfc-bestiary-pack-select" style="flex:1 1 auto;min-width:0;">
+          <option value="">Choose a compendium…</option>
+        </select>
+      </div>
+      <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.5rem;">
+        <label style="white-space:nowrap;color:var(--color-text-dark-secondary,#666);font-size:.85em;">Import into:</label>
+        <select class="grfc-bestiary-category-select" style="flex:1 1 auto;min-width:0;" disabled>
+          <option value="">Loading categories…</option>
+        </select>
+      </div>
+      <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.5rem;">
+        <input type="text" class="grfc-bestiary-filter" placeholder="Filter by name…" style="flex:1 1 auto;min-width:0;" disabled>
+        <button type="button" class="grfc-bestiary-load-btn" disabled>Load Creatures</button>
+      </div>
+      <p id="grfc-bestiary-status" style="color:var(--color-text-dark-secondary,#666);margin:.25rem 0 .5rem;">Choose a compendium and click Load Creatures.</p>
+      <ul class="grfc-bestiary-list" style="list-style:none;margin:0;padding:0;flex:1 1 auto;overflow-y:auto;border:1px solid #7773;border-radius:4px;"></ul>
+      <div style="display:flex;align-items:center;gap:.5rem;margin-top:.5rem;">
+        <span class="grfc-bestiary-count" style="color:var(--color-text-dark-secondary,#666);font-size:.85em;">0 selected</span>
+        <button type="button" class="grfc-bestiary-import-btn" style="margin-left:auto;" disabled>Import Selected</button>
+      </div>
+    `;
+  }
+
+  _bestiaryActivate(tab) {
+    const packSelect = tab.find('.grfc-bestiary-pack-select');
+    actorPacks().forEach((p) => {
+      packSelect.append(`<option value="${escapeHtml(p.metadata.id)}">${escapeHtml(p.metadata.label)}</option>`);
+    });
+    if (actorPacks().length === 0) {
+      tab.find('#grfc-bestiary-status').text('No Actor-type compendium packs found in this world.');
+    }
+
+    this._bestiaryLoadCategories(tab);
+
+    packSelect.on('change', () => {
+      const hasPack = !!packSelect.val();
+      tab.find('.grfc-bestiary-load-btn').prop('disabled', !hasPack);
+      tab.find('.grfc-bestiary-filter').prop('disabled', !hasPack);
+      tab.find('.grfc-bestiary-list').empty();
+      this._bestiaryUpdateCount(tab);
+    });
+    tab.find('.grfc-bestiary-load-btn').on('click', () => this._bestiaryLoadCreatures(tab));
+    tab.find('.grfc-bestiary-filter').on('input', () => this._bestiaryApplyFilter(tab));
+    tab.find('.grfc-bestiary-import-btn').on('click', () => this._bestiaryDoImport(tab));
+  }
+
+  async _bestiaryLoadCategories(tab) {
+    const select = tab.find('.grfc-bestiary-category-select');
+    const result = await apiFetch('/api/foundry/v1/categories');
+    if (!result.ok) {
+      select.empty().append(`<option value="">${escapeHtml(result.error)}</option>`);
+      return;
+    }
+
+    const categories = result.body.categories || [];
+    select.empty();
+    if (categories.length === 0) {
+      select.append('<option value="">No stat-block categories in this world</option>');
+      return;
+    }
+    categories.forEach((c) => {
+      select.append(`<option value="${c.id}">${escapeHtml(c.icon || '')} ${escapeHtml(c.name)}</option>`);
+    });
+    select.prop('disabled', false);
+  }
+
+  /** Cheap — pack.getIndex() reads name/type/img only, no full document load. */
+  async _bestiaryLoadCreatures(tab) {
+    const packId = tab.find('.grfc-bestiary-pack-select').val();
+    const list = tab.find('.grfc-bestiary-list');
+    const status = tab.find('#grfc-bestiary-status');
+    list.empty();
+    if (!packId) return;
+
+    const pack = game.packs.get(packId);
+    if (!pack) {
+      status.text('That compendium is no longer available.').css('color', '#c62828');
+      return;
+    }
+
+    status.text('Loading index…').css('color', '');
+    const index = await pack.getIndex();
+
+    const rows = Array.from(index).sort((a, b) => a.name.localeCompare(b.name));
+    if (rows.length === 0) {
+      status.text('No creatures found in that compendium.');
+      return;
+    }
+
+    rows.forEach((entry) => {
+      const uuid = entry.uuid ?? `Compendium.${pack.collection}.${pack.documentName}.${entry._id}`;
+      const li = $(`
+        <li data-name="${escapeHtml(entry.name.toLowerCase())}" style="display:flex;align-items:center;gap:.5rem;padding:.3rem .5rem;border-bottom:1px solid #7773;">
+          <label style="display:flex;align-items:center;gap:.5rem;flex:1 1 auto;min-width:0;cursor:pointer;">
+            <input type="checkbox" class="grfc-bestiary-check" value="${escapeHtml(uuid)}">
+            <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(entry.name)}</span>
+          </label>
+        </li>
+      `);
+      list.append(li);
+    });
+
+    status.text(`${rows.length} creature${rows.length === 1 ? '' : 's'} — check the ones to import.`);
+    list.find('.grfc-bestiary-check').on('change', () => this._bestiaryUpdateCount(tab));
+    this._bestiaryUpdateCount(tab);
+  }
+
+  _bestiaryApplyFilter(tab) {
+    const term = tab.find('.grfc-bestiary-filter').val().trim().toLowerCase();
+    tab.find('.grfc-bestiary-list > li').each((_, el) => {
+      const li = $(el);
+      li.toggle(term === '' || li.data('name').includes(term));
+    });
+  }
+
+  _bestiaryUpdateCount(tab) {
+    const n = tab.find('.grfc-bestiary-check:checked').length;
+    tab.find('.grfc-bestiary-count').text(`${n} selected`);
+    tab.find('.grfc-bestiary-import-btn').prop('disabled', n === 0 || !tab.find('.grfc-bestiary-category-select').val());
+  }
+
+  async _bestiaryDoImport(tab) {
+    const categoryId = tab.find('.grfc-bestiary-category-select').val();
+    const status = tab.find('#grfc-bestiary-status');
+    const importBtn = tab.find('.grfc-bestiary-import-btn');
+    const uuids = tab.find('.grfc-bestiary-check:checked').map((_, el) => el.value).get();
+    if (!categoryId || uuids.length === 0) return;
+
+    importBtn.prop('disabled', true);
+    status.css('color', '');
+    status.text(`Loading ${uuids.length} creature document(s)…`);
+
+    const actors = [];
+    for (const uuid of uuids) {
+      const doc = await fromUuid(uuid);
+      if (doc) actors.push(doc);
+    }
+
+    if (actors.length === 0) {
+      status.text('✘ Could not load any of the selected creatures.').css('color', '#c62828');
+      importBtn.prop('disabled', false);
+      return;
+    }
+
+    const outcome = await importActorsToGr(categoryId, actors, (msg) => status.text(msg));
+
+    if (!outcome.ok) {
+      status.text(`✘ ${outcome.error}`).css('color', '#c62828');
+      ui.notifications.error(`Geektastic Realms Foundry Connect: ${outcome.error}`);
+      importBtn.prop('disabled', false);
+      return;
+    }
+
+    const parts = [];
+    if (outcome.created) parts.push(`${outcome.created} imported`);
+    if (outcome.skipped) parts.push(`${outcome.skipped} skipped (already exist)`);
+    if (outcome.failed) parts.push(`${outcome.failed} failed`);
+    const summary = parts.length ? parts.join(', ') : 'nothing imported';
+
+    if (outcome.failed === 0) {
+      status.text(`✔ ${summary}.`).css('color', '#2e7d32');
+      ui.notifications.info(`Geektastic Realms Foundry Connect: ${summary}.`);
+    } else {
+      status.text(`⚠ ${summary}.`).css('color', '#b26a00');
+      ui.notifications.warn(`Geektastic Realms Foundry Connect: ${summary}.`);
+    }
+    importBtn.prop('disabled', false);
   }
 }
 

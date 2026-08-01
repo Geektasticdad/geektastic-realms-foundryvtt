@@ -9,6 +9,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.3.0] - 2026-08-01
+
+### Added
+- **New "Bestiary" tab in the Import Hub — import monsters from a Foundry
+  compendium (Roadmap 3.5).** GR previously shipped a bundled SRD monster
+  dataset for this; it's been replaced entirely, since a DM's own Foundry
+  world already has accurate, system-maintained creature data (whatever
+  Actor-type compendium they trust — the dnd5e SRD monsters pack or otherwise)
+  and GR shouldn't independently curate a copy. Pick a compendium pack and a
+  target GR category, click **Load Creatures** (reads the pack's index —
+  name/type only, no full document load), check the ones you want, and
+  **Import Selected** — only the checked creatures are fully loaded
+  (`fromUuid()` per selection) and POSTed to a new GR endpoint
+  (`POST /api/foundry/v1/compendium/import-actors`, chunked at 25/request via
+  the existing `foundry` token scope), which creates a private draft Entry +
+  full stat block per creature, skipping any whose title already exists in
+  the target category. New `actorPacks()` helper (mirrors the existing
+  `itemPacks()`) and `GET /api/foundry/v1/categories` call populate the two
+  pickers. See that repo's `Tech_Docs/FOUNDRY_API.md` for the endpoint
+  contracts and `app/Services/FoundryActorImportMapper.php` for the field
+  mapping — this first pass covers core stat block fields and flavor-text
+  features; mechanical Activities/equipment import lands in a follow-up.
+
 ## [2.2.2] - 2026-07-29
 
 ### Fixed
@@ -649,7 +672,11 @@ verification" checklist item.
   response).
 - Verified against Foundry VTT v13. Not yet tested against v14.
 
-[Unreleased]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.1.1...HEAD
+[Unreleased]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.3.0...HEAD
+[2.3.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.2.2...v2.3.0
+[2.2.2]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.2.1...v2.2.2
+[2.2.1]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.2.0...v2.2.1
+[2.2.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.1.1...v2.2.0
 [2.1.1]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.0.2...v2.1.0
 [1.5.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v1.4.0...v1.5.0
