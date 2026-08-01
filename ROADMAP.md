@@ -222,7 +222,7 @@ carry it into Geektastic Realms before it's gone.*
 
 **GR dependency:** Roadmap 2.9 — shipped in GR v2.1.0.
 
-## Stage 18 — Bestiary Import (Roadmap 3.5) ✅ code shipped (v2.4.0; live verification still open)
+## Stage 18 — Bestiary Import (Roadmap 3.5) ✅ code shipped (v2.5.0; live verification still open)
 
 *GR's first roadmap 3.5 pass bundled a static SRD monster dataset — replaced entirely
 once it turned out not to match the user's actual SRD content. A DM's own Foundry world
@@ -258,6 +258,19 @@ independently curate a copy when this module can just read it.*
       creature imported in a run, sent as `status`/`visibility` on the
       `import-actors` POST — previously every import landed as a private draft
       with no way to change that except one at a time in GR afterward.
+- [x] **Category custom fields, portrait/token art, "Nest under" (v2.5.0).**
+      `serializeActorForImport()` is now async: it uploads the Actor's portrait
+      (`img`) and prototype token art (`prototypeToken.texture.src`, skipped and
+      reused from the portrait upload when they're the same file) via a new
+      `uploadImageToGr()` → `POST /api/foundry/v1/media` (multipart), embedding
+      the resulting media ids as `portrait_media_id`/`token_media_id` on each
+      actor payload. A new "Nest under" dropdown, populated per-category from
+      `GET /api/foundry/v1/categories/{id}/summary-entries`
+      (`_bestiaryLoadSummaryEntries()`, reloaded on category change), sends
+      `parent_id` on the batch POST. Size/Type/Subtype/Challenge Rating/
+      Environment/Description population needs no module-side change — GR's
+      `FoundryActorImportMapper` already had everything needed in the payload
+      the module was already sending; matching happens entirely GR-side.
 - [ ] **Live verification** (not yet done — no live Foundry v14 world available in
       this pass): confirm `pack.getIndex()`/`fromUuid()` behave as expected against a
       real Actor-type compendium (the dnd5e system's own SRD monsters pack is the
@@ -269,10 +282,11 @@ independently curate a copy when this module can just read it.*
       creature, a skill-heavy one, a spellcaster) as the actual acceptance test, not
       just "did it run without erroring."
 
-**GR dependency:** Roadmap 3.5 — shipped in GR v2.4.0–v2.6.0 (removed the old
+**GR dependency:** Roadmap 3.5 — shipped in GR v2.4.0–v2.7.0 (removed the old
 bundled dataset, added the `import-actors`/`categories` endpoints and
 `FoundryActorImportMapper` — later versions added Activities/equipment/spell-list
-mapping and per-batch `status`/`visibility`).
+mapping, per-batch `status`/`visibility`, custom-field population, `POST
+/api/foundry/v1/media`, and `summary-entries`/`parent_id`).
 
 ---
 

@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.5.0] - 2026-08-01
+
+### Added
+- **Bestiary tab: category custom fields, portrait/token art, and a "Nest
+  under" picker.** Imported creatures now get Size/Type/Subtype/Challenge
+  Rating/Environment/Description filled in on any matching custom fields the
+  target category already has (nothing is created if the category doesn't
+  have them — see that repo's v2.7.0 changelog for the matching rules), the
+  Actor's portrait and prototype token art are uploaded into GR's media
+  library and attached as the entry's featured image / the stat block's
+  token image (new `uploadImageToGr()`, run per creature before the batch
+  POST — `serializeActorForImport()` is async now), and a new "Nest under"
+  dropdown lists the target category's Summary articles so a whole import
+  run can land under one instead of always at the top level.
+
 ## [2.4.0] - 2026-08-01
 
 ### Added
@@ -690,7 +705,8 @@ verification" checklist item.
   response).
 - Verified against Foundry VTT v13. Not yet tested against v14.
 
-[Unreleased]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.4.0...HEAD
+[Unreleased]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.5.0...HEAD
+[2.5.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.4.0...v2.5.0
 [2.4.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.3.0...v2.4.0
 [2.3.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.2.2...v2.3.0
 [2.2.2]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.2.1...v2.2.2

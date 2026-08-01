@@ -187,18 +187,70 @@ async function syncCompendiums(packIds, onProgress) {
 const IMPORT_ACTORS_CHUNK_SIZE = 25;
 
 /**
+ * Downloads a local Foundry asset (portrait/token art, a plain path like
+ * `worlds/.../goblin.webp` or `systems/dnd5e/tokens/...`) and uploads it into
+ * GR's media library via POST /api/foundry/v1/media (Roadmap 3.5 follow-up).
+ * Returns the new media id, or null on any failure (missing image, network
+ * error, unsupported format) — an image should never block creature import,
+ * same "best effort, never blocking" philosophy as fetchIconBlob() below.
+ * `foundry.utils.getRoute()` (when available) correctly prefixes the path for
+ * a world hosted under a subpath/proxy; plain relative paths already resolve
+ * fine against the current origin otherwise.
+ */
+async function uploadImageToGr(kind, path) {
+  if (!path) return null;
+  const { serverUrl, token } = getServerConfig();
+  if (!serverUrl || !token) return null;
+
+  try {
+    const resolved = typeof foundry?.utils?.getRoute === 'function' ? foundry.utils.getRoute(path) : path;
+    const imgResponse = await fetch(resolved);
+    if (!imgResponse.ok) return null;
+    const blob = await imgResponse.blob();
+
+    const formData = new FormData();
+    formData.append('kind', kind);
+    formData.append('file', blob, path.split('/').pop() || 'image.png');
+
+    const result = await apiFetch('/api/foundry/v1/media', { method: 'POST', body: formData });
+    return result.ok ? (result.body.media_id ?? null) : null;
+  } catch (err) {
+    console.warn(`Geektastic Realms Foundry Connect: failed to upload ${kind} image "${path}".`, err);
+    return null;
+  }
+}
+
+/**
  * Serializes one Actor document (plus its embedded Items) into the payload shape
  * POST /api/foundry/v1/compendium/import-actors expects — mirrors
  * resolveCompendiumItem()'s `source.toObject()` pattern, extended to also carry the
  * Actor's embedded Items (which toObject() alone may not include, depending on
  * Foundry version) so GR's FoundryActorImportMapper sees the full stat block.
+ * Also uploads the Actor's portrait and prototype token art into GR's media
+ * library (Roadmap 3.5 follow-up) and embeds the resulting media ids — skips the
+ * token upload and reuses the portrait's id when both point at the same file
+ * (the common case where a DM hasn't set a distinct token image).
  */
-function serializeActorForImport(actor) {
+async function serializeActorForImport(actor) {
   const data = actor.toObject();
   const items = Array.isArray(data.items) && data.items.length > 0
     ? data.items
     : (actor.items?.map((i) => i.toObject()) ?? []);
-  return { name: data.name, img: data.img ?? null, system: data.system ?? null, items };
+
+  const portraitMediaId = await uploadImageToGr('image', data.img);
+  const tokenSrc = data.prototypeToken?.texture?.src;
+  const tokenMediaId = !tokenSrc || tokenSrc === data.img
+    ? portraitMediaId
+    : await uploadImageToGr('token', tokenSrc);
+
+  return {
+    name: data.name,
+    img: data.img ?? null,
+    system: data.system ?? null,
+    items,
+    portrait_media_id: portraitMediaId,
+    token_media_id: tokenMediaId,
+  };
 }
 
 /**
@@ -207,7 +259,8 @@ function serializeActorForImport(actor) {
  * chunked per request. Calls onProgress with a short status string after each chunk.
  * `entryOptions.status`/`.visibility` apply to every Entry created in this run
  * (same GR enum the web entry form uses); both default GR-side to draft/private
- * when omitted.
+ * when omitted. `entryOptions.parentId`, if set, nests every created Entry under
+ * that Summary article.
  * @returns {Promise<{ok: true, created: number, skipped: number, failed: number} | {ok: false, error: string}>}
  */
 async function importActorsToGr(categoryId, actors, onProgress, entryOptions = {}) {
@@ -217,8 +270,10 @@ async function importActorsToGr(categoryId, actors, onProgress, entryOptions = {
 
   for (let i = 0; i < actors.length; i += IMPORT_ACTORS_CHUNK_SIZE) {
     const chunk = actors.slice(i, i + IMPORT_ACTORS_CHUNK_SIZE);
-    onProgress?.(`Importing ${Math.min(i + chunk.length, actors.length)}/${actors.length}…`);
+    onProgress?.(`Uploading images ${Math.min(i + chunk.length, actors.length)}/${actors.length}…`);
+    const serializedActors = await Promise.all(chunk.map((actor) => serializeActorForImport(actor)));
 
+    onProgress?.(`Importing ${Math.min(i + chunk.length, actors.length)}/${actors.length}…`);
     const result = await apiFetch('/api/foundry/v1/compendium/import-actors', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -226,7 +281,8 @@ async function importActorsToGr(categoryId, actors, onProgress, entryOptions = {
         category_id: Number(categoryId),
         status: entryOptions.status,
         visibility: entryOptions.visibility,
-        actors: chunk.map(serializeActorForImport),
+        parent_id: entryOptions.parentId ? Number(entryOptions.parentId) : undefined,
+        actors: serializedActors,
       }),
     });
 
@@ -2796,6 +2852,12 @@ class ImportHubForm extends GrfcApplication {
         </select>
       </div>
       <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.5rem;">
+        <label style="white-space:nowrap;color:var(--color-text-dark-secondary,#666);font-size:.85em;">Nest under:</label>
+        <select class="grfc-bestiary-parent-select" style="flex:1 1 auto;min-width:0;" disabled>
+          <option value="">— Top level —</option>
+        </select>
+      </div>
+      <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.5rem;">
         <label style="white-space:nowrap;color:var(--color-text-dark-secondary,#666);font-size:.85em;">Status:</label>
         <select class="grfc-bestiary-status-select" style="flex:1 1 auto;min-width:0;">
           <option value="draft" selected>Draft</option>
@@ -2840,6 +2902,7 @@ class ImportHubForm extends GrfcApplication {
       tab.find('.grfc-bestiary-list').empty();
       this._bestiaryUpdateCount(tab);
     });
+    tab.find('.grfc-bestiary-category-select').on('change', (ev) => this._bestiaryLoadSummaryEntries(tab, ev.target.value));
     tab.find('.grfc-bestiary-load-btn').on('click', () => this._bestiaryLoadCreatures(tab));
     tab.find('.grfc-bestiary-filter').on('input', () => this._bestiaryApplyFilter(tab));
     tab.find('.grfc-bestiary-import-btn').on('click', () => this._bestiaryDoImport(tab));
@@ -2861,6 +2924,22 @@ class ImportHubForm extends GrfcApplication {
     }
     categories.forEach((c) => {
       select.append(`<option value="${c.id}">${escapeHtml(c.icon || '')} ${escapeHtml(c.name)}</option>`);
+    });
+    select.prop('disabled', false);
+    this._bestiaryLoadSummaryEntries(tab, select.val());
+  }
+
+  /** Reloads the "Nest under" picker for the currently chosen category — Summary articles are category-scoped. */
+  async _bestiaryLoadSummaryEntries(tab, categoryId) {
+    const select = tab.find('.grfc-bestiary-parent-select');
+    select.empty().append('<option value="">— Top level —</option>').prop('disabled', true);
+    if (!categoryId) return;
+
+    const result = await apiFetch(`/api/foundry/v1/categories/${categoryId}/summary-entries`);
+    if (!result.ok) return; // non-fatal — importing at the top level still works
+
+    (result.body.entries || []).forEach((e) => {
+      select.append(`<option value="${e.id}">${escapeHtml(e.title)}</option>`);
     });
     select.prop('disabled', false);
   }
@@ -2922,6 +3001,7 @@ class ImportHubForm extends GrfcApplication {
 
   async _bestiaryDoImport(tab) {
     const categoryId = tab.find('.grfc-bestiary-category-select').val();
+    const parentId = tab.find('.grfc-bestiary-parent-select').val();
     const entryStatus = tab.find('.grfc-bestiary-status-select').val();
     const visibility = tab.find('.grfc-bestiary-visibility-select').val();
     const status = tab.find('#grfc-bestiary-status');
@@ -2945,7 +3025,7 @@ class ImportHubForm extends GrfcApplication {
       return;
     }
 
-    const outcome = await importActorsToGr(categoryId, actors, (msg) => status.text(msg), { status: entryStatus, visibility });
+    const outcome = await importActorsToGr(categoryId, actors, (msg) => status.text(msg), { status: entryStatus, visibility, parentId });
 
     if (!outcome.ok) {
       status.text(`✘ ${outcome.error}`).css('color', '#c62828');
