@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.4.0] - 2026-08-01
+
+### Added
+- **Bestiary tab: choose Status/Visibility for imported creatures, and the
+  spell list now comes along.** Two new dropdowns (Status: Draft/Published/
+  Archived; Visibility: Private/Members/Public) apply to every creature
+  imported in a run — previously every import landed as a private draft with
+  no way to change that afterward except one at a time in GR. Also: a spell
+  Item embedded on an Actor was always sent to GR (nothing changed here —
+  `serializeActorForImport()` already carries every embedded Item regardless
+  of type), but GR's mapper was silently dropping it; now it lands as a real
+  spell-list entry with the right usage type (slot/pact/at-will/per-day) —
+  see that repo's v2.6.0 changelog for the GR-side half of this fix.
+
+### Changed
+- Bestiary tab's **Load Creatures** button is now just **Load** — the longer
+  label was wrapping onto two lines in the Import Hub's fixed-width panel.
+
 ## [2.3.0] - 2026-08-01
 
 ### Added
@@ -672,7 +690,8 @@ verification" checklist item.
   response).
 - Verified against Foundry VTT v13. Not yet tested against v14.
 
-[Unreleased]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.3.0...HEAD
+[Unreleased]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.4.0...HEAD
+[2.4.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.3.0...v2.4.0
 [2.3.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.2.2...v2.3.0
 [2.2.2]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.2.1...v2.2.2
 [2.2.1]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.2.0...v2.2.1

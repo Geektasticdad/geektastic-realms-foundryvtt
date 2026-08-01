@@ -222,7 +222,7 @@ carry it into Geektastic Realms before it's gone.*
 
 **GR dependency:** Roadmap 2.9 — shipped in GR v2.1.0.
 
-## Stage 18 — Bestiary Import (Roadmap 3.5) ✅ code shipped (v2.3.0; live verification still open)
+## Stage 18 — Bestiary Import (Roadmap 3.5) ✅ code shipped (v2.4.0; live verification still open)
 
 *GR's first roadmap 3.5 pass bundled a static SRD monster dataset — replaced entirely
 once it turned out not to match the user's actual SRD content. A DM's own Foundry world
@@ -245,12 +245,19 @@ independently curate a copy when this module can just read it.*
       `SYNC_CHUNK_SIZE = 100` since each actor's payload — full `system` data plus
       every embedded Item — is much heavier than compendium sync's raw index
       passthrough).
-- [ ] **Phase 2/3 (GR-side, `FoundryActorImportMapper`):** the first pass covers core
-      stat block fields (abilities, AC, HP, speed, saves, skills, senses, languages,
-      damage/condition lists, CR) and flavor-text features (traits/actions as plain
-      description text). Mechanical Activities (attack/save/check/heal/damage rolls)
-      and equipment items aren't mapped yet — every imported feature lands as a
-      passive Trait until that follow-up pass ships.
+- [x] **Phase 2/3 (GR-side, `FoundryActorImportMapper`):** covers core stat block
+      fields, flavor-text features, mechanical Activities on both features and
+      equipment items (attack/save/check/heal/damage), equipment item mapping, and
+      the spell list — hand-verified field-by-field against real `actor.toObject()`
+      exports (an SRD Goblin, a natural-armor Dragon Turtle, several
+      homebrew/ddb-imported NPCs) provided by the user, not just derived from
+      reading GR's forward-export code. See GR's own CHANGELOG (v2.5.0/v2.6.0) for
+      what that verification pass caught and fixed.
+- [x] **Status/Visibility pickers.** The Bestiary tab's Status (Draft/Published/
+      Archived) and Visibility (Private/Members/Public) dropdowns apply to every
+      creature imported in a run, sent as `status`/`visibility` on the
+      `import-actors` POST — previously every import landed as a private draft
+      with no way to change that except one at a time in GR afterward.
 - [ ] **Live verification** (not yet done — no live Foundry v14 world available in
       this pass): confirm `pack.getIndex()`/`fromUuid()` behave as expected against a
       real Actor-type compendium (the dnd5e system's own SRD monsters pack is the
@@ -262,9 +269,10 @@ independently curate a copy when this module can just read it.*
       creature, a skill-heavy one, a spellcaster) as the actual acceptance test, not
       just "did it run without erroring."
 
-**GR dependency:** Roadmap 3.5 — shipped in GR v2.4.0 (removed the old bundled
-dataset, added the `import-actors`/`categories` endpoints and
-`FoundryActorImportMapper`).
+**GR dependency:** Roadmap 3.5 — shipped in GR v2.4.0–v2.6.0 (removed the old
+bundled dataset, added the `import-actors`/`categories` endpoints and
+`FoundryActorImportMapper` — later versions added Activities/equipment/spell-list
+mapping and per-batch `status`/`visibility`).
 
 ---
 

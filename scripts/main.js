@@ -205,9 +205,12 @@ function serializeActorForImport(actor) {
  * Bulk-imports the given Actor documents into a GR category (Roadmap 3.5 —
  * "import monsters from a Foundry compendium" instead of a GR-bundled dataset),
  * chunked per request. Calls onProgress with a short status string after each chunk.
+ * `entryOptions.status`/`.visibility` apply to every Entry created in this run
+ * (same GR enum the web entry form uses); both default GR-side to draft/private
+ * when omitted.
  * @returns {Promise<{ok: true, created: number, skipped: number, failed: number} | {ok: false, error: string}>}
  */
-async function importActorsToGr(categoryId, actors, onProgress) {
+async function importActorsToGr(categoryId, actors, onProgress, entryOptions = {}) {
   let created = 0;
   let skipped = 0;
   let failed = 0;
@@ -219,7 +222,12 @@ async function importActorsToGr(categoryId, actors, onProgress) {
     const result = await apiFetch('/api/foundry/v1/compendium/import-actors', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ category_id: Number(categoryId), actors: chunk.map(serializeActorForImport) }),
+      body: JSON.stringify({
+        category_id: Number(categoryId),
+        status: entryOptions.status,
+        visibility: entryOptions.visibility,
+        actors: chunk.map(serializeActorForImport),
+      }),
     });
 
     if (!result.ok) {
@@ -2788,10 +2796,24 @@ class ImportHubForm extends GrfcApplication {
         </select>
       </div>
       <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.5rem;">
-        <input type="text" class="grfc-bestiary-filter" placeholder="Filter by name…" style="flex:1 1 auto;min-width:0;" disabled>
-        <button type="button" class="grfc-bestiary-load-btn" disabled>Load Creatures</button>
+        <label style="white-space:nowrap;color:var(--color-text-dark-secondary,#666);font-size:.85em;">Status:</label>
+        <select class="grfc-bestiary-status-select" style="flex:1 1 auto;min-width:0;">
+          <option value="draft" selected>Draft</option>
+          <option value="published">Published</option>
+          <option value="archived">Archived</option>
+        </select>
+        <label style="white-space:nowrap;color:var(--color-text-dark-secondary,#666);font-size:.85em;">Visibility:</label>
+        <select class="grfc-bestiary-visibility-select" style="flex:1 1 auto;min-width:0;">
+          <option value="private" selected>Private</option>
+          <option value="members">Members</option>
+          <option value="public">Public</option>
+        </select>
       </div>
-      <p id="grfc-bestiary-status" style="color:var(--color-text-dark-secondary,#666);margin:.25rem 0 .5rem;">Choose a compendium and click Load Creatures.</p>
+      <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.5rem;">
+        <input type="text" class="grfc-bestiary-filter" placeholder="Filter by name…" style="flex:1 1 auto;min-width:0;" disabled>
+        <button type="button" class="grfc-bestiary-load-btn" disabled>Load</button>
+      </div>
+      <p id="grfc-bestiary-status" style="color:var(--color-text-dark-secondary,#666);margin:.25rem 0 .5rem;">Choose a compendium and click Load.</p>
       <ul class="grfc-bestiary-list" style="list-style:none;margin:0;padding:0;flex:1 1 auto;overflow-y:auto;border:1px solid #7773;border-radius:4px;"></ul>
       <div style="display:flex;align-items:center;gap:.5rem;margin-top:.5rem;">
         <span class="grfc-bestiary-count" style="color:var(--color-text-dark-secondary,#666);font-size:.85em;">0 selected</span>
@@ -2900,6 +2922,8 @@ class ImportHubForm extends GrfcApplication {
 
   async _bestiaryDoImport(tab) {
     const categoryId = tab.find('.grfc-bestiary-category-select').val();
+    const entryStatus = tab.find('.grfc-bestiary-status-select').val();
+    const visibility = tab.find('.grfc-bestiary-visibility-select').val();
     const status = tab.find('#grfc-bestiary-status');
     const importBtn = tab.find('.grfc-bestiary-import-btn');
     const uuids = tab.find('.grfc-bestiary-check:checked').map((_, el) => el.value).get();
@@ -2921,7 +2945,7 @@ class ImportHubForm extends GrfcApplication {
       return;
     }
 
-    const outcome = await importActorsToGr(categoryId, actors, (msg) => status.text(msg));
+    const outcome = await importActorsToGr(categoryId, actors, (msg) => status.text(msg), { status: entryStatus, visibility });
 
     if (!outcome.ok) {
       status.text(`✘ ${outcome.error}`).css('color', '#c62828');
