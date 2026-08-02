@@ -221,6 +221,33 @@ async function uploadImageToGr(kind, path) {
 }
 
 /**
+ * Resolves Foundry's inline roll/lookup enrichers (`[[/attack]]`, `[[/damage]]`,
+ * `[[/item .id]]{label}`, `[[lookup @path]]`, etc.) in a description's raw HTML
+ * into the actual values they represent — the same resolution Foundry itself
+ * performs when displaying that text on a sheet. `actor.toObject()`/`item.toObject()`
+ * only ever return the un-enriched source markup (GR has no Foundry document
+ * context to resolve it against on its own), so this has to happen client-side,
+ * before the payload leaves for GR. `doc` supplies both the roll data (for
+ * `@ability`/`@resources.*` lookups) and the relative-UUID context `[[/item .id]]`
+ * needs to resolve a sibling item on the same actor.
+ */
+async function enrichDescriptionHtml(html, doc) {
+  const TextEditorImpl = foundry?.applications?.ux?.TextEditor?.implementation
+    ?? (typeof TextEditor !== 'undefined' ? TextEditor : null);
+  if (!html || typeof TextEditorImpl?.enrichHTML !== 'function') return html;
+  try {
+    return await TextEditorImpl.enrichHTML(html, {
+      rollData: doc?.getRollData?.() ?? {},
+      relativeTo: doc ?? null,
+      secrets: true,
+    });
+  } catch (err) {
+    console.warn('Geektastic Realms Foundry Connect: failed to enrich description text.', err);
+    return html;
+  }
+}
+
+/**
  * Serializes one Actor document (plus its embedded Items) into the payload shape
  * POST /api/foundry/v1/compendium/import-actors expects — mirrors
  * resolveCompendiumItem()'s `source.toObject()` pattern, extended to also carry the
@@ -229,13 +256,28 @@ async function uploadImageToGr(kind, path) {
  * Also uploads the Actor's portrait and prototype token art into GR's media
  * library (Roadmap 3.5 follow-up) and embeds the resulting media ids — skips the
  * token upload and reuses the portrait's id when both point at the same file
- * (the common case where a DM hasn't set a distinct token image).
+ * (the common case where a DM hasn't set a distinct token image). Biography and
+ * item description text is run through `enrichDescriptionHtml()` first so
+ * inline-roll/lookup source markup never reaches GR as literal `[[...]]` codes.
  */
 async function serializeActorForImport(actor) {
   const data = actor.toObject();
   const items = Array.isArray(data.items) && data.items.length > 0
     ? data.items
     : (actor.items?.map((i) => i.toObject()) ?? []);
+
+  const biography = data.system?.details?.biography;
+  if (biography?.value) {
+    biography.value = await enrichDescriptionHtml(biography.value, actor);
+  }
+
+  await Promise.all(items.map(async (itemData) => {
+    const description = itemData.system?.description;
+    if (description?.value) {
+      const liveItem = actor.items?.get(itemData._id) ?? actor;
+      description.value = await enrichDescriptionHtml(description.value, liveItem);
+    }
+  }));
 
   const portraitMediaId = await uploadImageToGr('image', data.img);
   const tokenSrc = data.prototypeToken?.texture?.src;

@@ -222,7 +222,7 @@ carry it into Geektastic Realms before it's gone.*
 
 **GR dependency:** Roadmap 2.9 — shipped in GR v2.1.0.
 
-## Stage 18 — Bestiary Import (Roadmap 3.5) ✅ code shipped (v2.5.0; live verification still open)
+## Stage 18 — Bestiary Import (Roadmap 3.5) ✅ code shipped (v2.5.0–v2.6.0; live verification still open)
 
 *GR's first roadmap 3.5 pass bundled a static SRD monster dataset — replaced entirely
 once it turned out not to match the user's actual SRD content. A DM's own Foundry world
@@ -271,6 +271,17 @@ independently curate a copy when this module can just read it.*
       Environment/Description population needs no module-side change — GR's
       `FoundryActorImportMapper` already had everything needed in the payload
       the module was already sending; matching happens entirely GR-side.
+- [x] **Enrich inline-roll/lookup markup before sending (v2.6.0).** Raw
+      `toObject()` description text kept Foundry's un-enriched source markup —
+      `[[/attack extended]]`, `[[/damage extended]]`, `[[/item .id]]{label}`,
+      `[[lookup @resources.legact.label]]`, etc. — verbatim, so imported
+      features/items/biography text showed the literal codes in GR instead of
+      the values they represent. `serializeActorForImport()` now resolves the
+      Actor's biography and every embedded item's description through a new
+      `enrichDescriptionHtml()` (`TextEditor.enrichHTML()`, `relativeTo` the
+      actor/item so relative item links and `@resources.*` lookups resolve
+      correctly) before the payload is built — no GR-side change needed, since
+      GR already renders/sanitizes whatever HTML it's handed.
 - [ ] **Live verification** (not yet done — no live Foundry v14 world available in
       this pass): confirm `pack.getIndex()`/`fromUuid()` behave as expected against a
       real Actor-type compendium (the dnd5e system's own SRD monsters pack is the

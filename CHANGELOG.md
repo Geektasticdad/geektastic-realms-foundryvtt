@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.6.0] - 2026-08-01
+
+### Fixed
+- **Bestiary import no longer leaves literal Foundry inline-roll/lookup source
+  markup** (`[[/attack extended]]`, `[[/damage extended]]`,
+  `[[/item .id]]{label}`, `[[lookup @resources.legact.label]]`, etc.) inside
+  imported descriptions. `serializeActorForImport()` now runs the Actor's
+  biography and every embedded item's description through a new
+  `enrichDescriptionHtml()` (`TextEditor.enrichHTML()`, with the actor/item as
+  `relativeTo` and its roll data) before the payload is sent to GR — the same
+  resolution Foundry performs when displaying that text on a sheet, so GR
+  receives the actual rendered values instead of the raw `[[...]]` codes.
+
 ## [2.5.0] - 2026-08-01
 
 ### Added
@@ -705,7 +718,8 @@ verification" checklist item.
   response).
 - Verified against Foundry VTT v13. Not yet tested against v14.
 
-[Unreleased]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.5.0...HEAD
+[Unreleased]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.6.0...HEAD
+[2.6.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.5.0...v2.6.0
 [2.5.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.4.0...v2.5.0
 [2.4.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.3.0...v2.4.0
 [2.3.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.2.2...v2.3.0
