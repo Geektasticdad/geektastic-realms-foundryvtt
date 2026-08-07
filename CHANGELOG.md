@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.9.3] - 2026-08-07
+
+### Changed
+- **Deploy Encounter no longer wraps adversary Actors in a shared
+  "Encounters" grouping folder.** v2.9.0–v2.9.2 all filed a deploy's Actors
+  under `Encounters/{encounter name}`, nested inside whatever Select Folder
+  destination was chosen — with Select Folder now giving a DM their own
+  destination per deploy, that extra shared layer was redundant on top of
+  organization they'd already chosen, and not what was wanted. Each
+  encounter's Actors (and its summary actor) now land directly in a
+  folder named after the encounter, created right under the Select Folder
+  destination (or top level) — no intermediate "Encounters" folder.
+
 ## [2.9.2] - 2026-08-07
 
 ### Fixed
@@ -850,7 +863,8 @@ verification" checklist item.
   response).
 - Verified against Foundry VTT v13. Not yet tested against v14.
 
-[Unreleased]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.9.2...HEAD
+[Unreleased]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.9.3...HEAD
+[2.9.3]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.9.2...v2.9.3
 [2.9.2]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.9.1...v2.9.2
 [2.9.1]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.9.0...v2.9.1
 [2.9.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.8.1...v2.9.0

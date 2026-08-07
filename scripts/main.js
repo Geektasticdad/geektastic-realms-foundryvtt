@@ -1704,42 +1704,34 @@ function syncedActorsByEntryId() {
 }
 
 /**
- * Finds or creates the "Encounters" Actor folder, and within it a subfolder named
- * after this encounter (Stage 10) — every adversary Actor (and, per Stage 21, the
- * encounter summary Actor) a Deploy Encounter run creates lands in
- * `Encounters/{name}`, the same organization a DM would build by hand.
- * @param {?string} parentFolderId - where the "Encounters" folder itself lives
- *   (Stage 22's Select Folder picker — one of this world's top-level Actor
- *   folders); null for top level.
- * @returns {Promise<string>} the encounter subfolder's id
+ * Finds or creates the Actor folder one Deploy Encounter run's adversary Actors
+ * (and, per Stage 21, the encounter summary Actor) land in — named after the
+ * encounter itself, directly under `parentFolderId` (Stage 22's Select Folder
+ * picker — one of this world's top-level Actor folders, or top level if none
+ * chosen). No longer wraps that in a shared "Encounters" grouping folder —
+ * v2.9.1/v2.9.2 both did, and that turned out to be unwanted: with Select
+ * Folder now giving a DM their own destination per deploy, an extra shared
+ * "Encounters" layer inside it was just redundant nesting on top of
+ * organization the DM had already chosen.
+ * @param {?string} parentFolderId - where this encounter's folder lives; null for top level.
+ * @returns {Promise<string>} the encounter folder's id
  *
- * Only reuses an "Encounters" folder that's *already* directly under the
- * requested `parentFolderId` — deliberately does not hunt down and relocate
- * some other "Encounters" folder found elsewhere in the world (e.g. one a DM
- * has since dragged somewhere else by hand in Foundry's own UI) to match.
- * Doing that (an earlier version of this function did) meant a DM's own
- * manual sidebar organization got silently undone on the next deploy, and
- * relied on an unverified `Folder#update({ folder })` re-parenting call —
- * both real risk for one folder lookup. If nothing matches the exact
- * requested parent, a fresh "Encounters" folder is created there instead;
- * worst case a DM who deploys under different Select Folder choices over
- * time ends up with more than one "Encounters" folder, in different places
- * — visible and unsurprising, unlike a folder disappearing from where they
- * put it. Same reasoning for the per-encounter child folder below: reused
- * only if already directly under *this* "Encounters" folder, never moved
- * from wherever an older one was left.
+ * Only reuses a same-named folder that's *already* directly under the
+ * requested `parentFolderId` — never hunts down and relocates one found
+ * elsewhere (e.g. one a DM has since moved by hand in Foundry's own UI). If
+ * nothing matches the exact requested parent, a fresh folder is created
+ * there instead; worst case a DM who deploys the same encounter under
+ * different Select Folder choices over time ends up with more than one
+ * folder for it, in different places — visible and predictable, unlike one
+ * silently vanishing from where it was left.
  */
 async function findOrCreateEncounterFolder(encounterName, parentFolderId) {
-  const grandparent = parentFolderId || null;
-  let parent = game.folders.find((f) => f.type === 'Actor' && f.name === 'Encounters' && folderIdOf(f) === grandparent);
-  if (!parent) {
-    parent = await Folder.create({ name: 'Encounters', type: 'Actor', folder: grandparent });
+  const parent = parentFolderId || null;
+  let folder = game.folders.find((f) => f.type === 'Actor' && f.name === encounterName && folderIdOf(f) === parent);
+  if (!folder) {
+    folder = await Folder.create({ name: encounterName, type: 'Actor', folder: parent });
   }
-  let child = game.folders.find((f) => f.type === 'Actor' && f.folder === parent.id && f.name === encounterName);
-  if (!child) {
-    child = await Folder.create({ name: encounterName, type: 'Actor', folder: parent.id });
-  }
-  return child.id;
+  return folder.id;
 }
 
 /** dnd5e "physical" item types that show under a Group/Encounter actor's Loot tab. */

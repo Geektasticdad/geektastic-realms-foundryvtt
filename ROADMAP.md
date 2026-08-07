@@ -474,7 +474,7 @@ existing response shape.
 
 ---
 
-## Stage 22 — Encounters tab: Campaign filter + Select Folder ✅ code shipped (v2.9.1; two real bugs found in live use and fixed in v2.9.2)
+## Stage 22 — Encounters tab: Campaign filter + Select Folder ✅ code shipped (v2.9.1; two real bugs found in live use and fixed in v2.9.2; "Encounters" wrapper folder dropped in v2.9.3)
 
 *Stage 21 brought the Handouts/Tables tabs up to the Adventure tab's picker; this
 closes the gap on the last of the four "pick a module" tabs. Deploy Encounter
@@ -528,6 +528,14 @@ in v2.9.2:**
   valid; the function's existing try/catch already handled a genuine failure
   there the same way (return null, never block the deploy), just without a wrong
   guess vetoing a valid attempt first.
+
+**v2.9.3 — dropped the shared "Encounters" wrapper folder entirely.** Even with
+the relocation bug fixed, wrapping every deploy's Actors in a shared
+`Encounters/{name}` folder inside the DM's chosen Select Folder destination
+turned out to be unwanted — redundant nesting on top of organization the DM
+had already picked. `findOrCreateEncounterFolder()` now creates the
+per-encounter folder directly under the Select Folder destination (or top
+level), no intermediate grouping folder at all.
 
 **GR dependency:** none — purely Foundry-side, reusing Stage 21's shared picker
 helpers with no new GR endpoint.
