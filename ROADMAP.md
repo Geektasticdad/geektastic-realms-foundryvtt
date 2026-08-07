@@ -351,15 +351,73 @@ breaking change to the existing modules payload.
 
 ---
 
+## Stage 20 — Callout block styling ✅ code shipped (v2.8.0; live verification still open)
+
+*GR's block editor has six styled "callout" blocks (Read Aloud, DM Note, Encounter,
+Treasure, Boxed Text, DM Secret). Stage 13 already made sure importing one didn't
+silently lose which type it was (a labeled `<blockquote>`, since ProseMirror's
+schema doesn't know GR's own wrapper `<div>`s) — this stage makes it actually look
+like GR's own styling, not just a plain grey blockquote, and gives DM Secret real
+GM-only-visible behavior instead of a label everyone can read equally.*
+
+- [x] New `styles/gr-callouts.css`, registered via `module.json`'s `styles` array —
+      colors copied from GR's own `public/assets/css/app.css` default theme
+      (border-left accent + translucent tint per callout type), registered against
+      GR's own class names so the same markup means the same thing on both sides.
+- [x] `rewriteCalloutBlocks()` now sets `class="{cssClass}"` on the `<blockquote>`
+      it already built for the five non-secret callouts, alongside the existing
+      bold label. Foundry 14.352 added a global `class` attribute to every
+      ProseMirror node/mark, so on this module's verified version the class (and
+      therefore the styling) now survives a DM re-editing and re-saving the page,
+      not just the initial import — unconfirmed whether that holds on v13
+      (`compatibility.minimum`) too, but the bold-label fallback is unaffected
+      either way.
+- [x] DM Secret now imports as Foundry's own native `<section class="secret">`
+      block instead of a labeled blockquote — GM/Owner-only visible by default,
+      with Foundry's built-in reveal-to-players toggle, layered with GR's own
+      accent color via a `.dm-secret` rule on top of Foundry's own secret-block
+      chrome (not replacing it).
+- [x] README: rewrote the stale Stage 13-era "Importing an Adventure" section to
+      describe the actual Stage 19 folder-tree behavior, and added a new "Callout
+      block styling" section documenting the six classes and how a DM can hand-type
+      them via a Journal page's Source/HTML mode to author GR-style callouts
+      directly in Foundry, not just receive them on import.
+- [ ] **Deliberately not attempted this pass:** a DM-facing "insert this block
+      type" button in Foundry's own ProseMirror Format menu (the
+      `getProseMirrorMenuDropDowns` hook, confirmed to exist since Foundry
+      release 10.283) — real, but its exact dropdown-entry/command shape
+      couldn't be confirmed from available documentation, and it runs on every
+      ProseMirror editor in the world, not just Journal pages, so a wrong shape
+      risks breaking text editing broadly rather than failing narrowly. The
+      Source/HTML-mode workaround above covers the same need at effectively zero
+      risk; revisit this only with a live instance (or confirmed reference code)
+      to verify against.
+- [ ] **Live verification** (not yet done — no live Foundry v14 world available in
+      this pass): confirm the stylesheet actually loads and renders as expected;
+      confirm a re-edited/re-saved page really does keep the `class` attribute per
+      the 14.352 release note; confirm `<section class="secret">` actually renders
+      with Foundry's native GM-only/reveal behavior with no companion markup
+      needed (the exact reveal-button wiring wasn't confirmed against a live
+      instance — worst case here is a cosmetic/interaction quirk, not a broken
+      import, since the hide-from-non-Owners behavior only needs the class itself).
+
+**GR dependency:** none — purely Foundry-side, matching an existing GR convention
+(the same six class names GR's own block editor and MCP server already use) rather
+than requiring any GR-side change.
+
+---
+
 ## Sequencing
 
 Stage 8 gates everything (verify before building). Stages 9 → 10 are strictly ordered
 (encounter deploy reuses re-sync). Stages 11 and 12 are independent of each other and
-of 10, but all three precede 13. Stages 14–19 float — schedule opportunistically
+of 10, but all three precede 13. Stages 14–20 float — schedule opportunistically
 alongside GR-side releases, matching the milestone table in the main repo's
 [ROADMAP.md](https://github.com/Geektasticdad/geektastic-realms/blob/main/ROADMAP.md).
 Stage 16's GR dependency (Roadmap 2.8) shipped in GR v2.0.0; only its own live
 verification remains open. Stage 17 floats independently of Stage 16, gated only on
 GR's Roadmap 2.9 shipping first (it has, in GR v2.1.0). Stage 19 depends only on
 Stage 13 (it restructures Stage 13's output) and its own small GR-side addition
-(v2.17.4) — independent of Stages 14–18.
+(v2.17.4) — independent of Stages 14–18. Stage 20 has no GR dependency at all and
+touches only `rewriteCalloutBlocks()` (shared by Stages 11 and 13/19) plus a new
+stylesheet — independent of every other stage.

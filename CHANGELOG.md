@@ -9,6 +9,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.8.0] - 2026-08-07
+
+### Added
+- **Callout block styling (Stage 20)** — a new bundled stylesheet
+  (`styles/gr-callouts.css`) styles GR's six callout classes (`read-aloud`,
+  `dm-note`, `encounter-block`, `treasure-block`, `boxed-text`, `dm-secret`)
+  to match GR's own colors, so content imported via Import Handouts or Import
+  Adventure looks the same in Foundry as it does on GR's own site. The same
+  classes work by hand too — switch a Journal page to Source/HTML mode and
+  wrap a block in `<blockquote class="read-aloud">` (etc.), same convention
+  the Geektastic MCP Server documents for its own tools.
+
+### Changed
+- **`rewriteCalloutBlocks()` now preserves GR's class name, not just a text
+  label.** The five non-secret callouts still rewrite into a `<blockquote>`
+  (survives ProseMirror editing on every supported version) but now also
+  carry `class="{cssClass}"`, styled by the new stylesheet. On Foundry 14.352+
+  (this module's verified version), a global `class` attribute was added to
+  every ProseMirror node/mark, so the class — and the styling — now survives
+  a DM re-editing and re-saving the page, not just the initial import.
+- **DM Secret imports as Foundry's own native Secret block**
+  (`<section class="secret">`) instead of a labeled blockquote everyone with
+  page access could read equally — GM/Owner-only visible by default, with
+  Foundry's built-in reveal-to-players toggle, a closer match to "hidden
+  until the DM chooses to reveal it" than the old label-only approach ever
+  was.
+
 ## [2.7.0] - 2026-08-06
 
 ### Added
@@ -742,7 +769,8 @@ verification" checklist item.
   response).
 - Verified against Foundry VTT v13. Not yet tested against v14.
 
-[Unreleased]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.7.0...HEAD
+[Unreleased]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.8.0...HEAD
+[2.8.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.7.0...v2.8.0
 [2.7.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.6.0...v2.7.0
 [2.6.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.5.0...v2.6.0
 [2.5.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.4.0...v2.5.0

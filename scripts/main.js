@@ -780,11 +780,29 @@ function rewriteAdventureRefs(html, ctx) {
  * importantly, DM Secret vs. Read Aloud — very different audiences) the first
  * time a DM opens an imported page in Foundry's own editor to touch it up.
  *
- * Rewrites each into a `<blockquote>` — a node ProseMirror's schema does define
- * — with a bold label identifying the callout type, so the distinction survives
- * even though the exact original styling doesn't. Best-effort: not yet verified
- * against a live Foundry v14 instance (see ROADMAP.md), but a labeled blockquote
- * is a strict improvement over an unlabeled, silently-unwrapped div either way.
+ * Five of the six rewrite into a `<blockquote class="{cssClass}">` — a node
+ * ProseMirror's schema does define, so it always survives editing — carrying
+ * both a bold label (readable even if the class itself doesn't survive) and
+ * GR's own class name, which `styles/gr-callouts.css` (Stage 20) styles to
+ * match GR's own colors/borders. Foundry 14.352 added a global `class`
+ * attribute to every ProseMirror node/mark, so on this module's verified
+ * version the class — and therefore the styling — now survives a DM
+ * re-editing and re-saving the page too, not just the initial import;
+ * unconfirmed whether that holds on v13 (this module's `compatibility.minimum`)
+ * as well, but the bold-label fallback is unaffected either way. Not yet
+ * verified against a live instance (see ROADMAP.md).
+ *
+ * DM Secret gets different treatment: instead of a labeled blockquote everyone
+ * with access to the page can read equally, it becomes Foundry's own native
+ * `<section class="secret">` block — GM/Owner-only visible by default, with
+ * Foundry's built-in reveal-to-players toggle — a closer match to GR's "hidden
+ * until the DM chooses to reveal it" intent than a same-visibility-as-everything-
+ * else label ever was. `styles/gr-callouts.css`'s `.dm-secret` rule layers GR's
+ * accent color on top of Foundry's own secret-block chrome, it doesn't replace
+ * it. The exact reveal-button wiring Foundry expects internally isn't confirmed
+ * against a live instance — worst case here is a cosmetic/interaction quirk on
+ * the reveal control, not a broken import, since `class="secret"` alone is
+ * enough for Foundry to hide the block from non-Owners.
  *
  * DOM-based (not regex, unlike the ref-chip rewrites above) because these wrapper
  * nodes hold ordinary block content and Tiptap's schema allows nesting one inside
@@ -798,7 +816,6 @@ const CALLOUT_LABELS = {
   'encounter-block': 'Encounter',
   'treasure-block': 'Treasure',
   'boxed-text': 'Boxed Text',
-  'dm-secret': 'DM Secret — do not reveal to players',
 };
 
 function rewriteCalloutBlocks(html) {
@@ -811,6 +828,7 @@ function rewriteCalloutBlocks(html) {
   for (const [cssClass, label] of Object.entries(CALLOUT_LABELS)) {
     root.querySelectorAll(`div.${cssClass}`).forEach((el) => {
       const blockquote = parsed.createElement('blockquote');
+      blockquote.setAttribute('class', cssClass);
       const labelPara = parsed.createElement('p');
       const strong = parsed.createElement('strong');
       strong.textContent = label;
@@ -820,6 +838,18 @@ function rewriteCalloutBlocks(html) {
       el.replaceWith(blockquote);
     });
   }
+
+  root.querySelectorAll('div.dm-secret').forEach((el) => {
+    const section = parsed.createElement('section');
+    section.setAttribute('class', 'secret dm-secret');
+    const labelPara = parsed.createElement('p');
+    const strong = parsed.createElement('strong');
+    strong.textContent = 'DM Secret';
+    labelPara.appendChild(strong);
+    section.appendChild(labelPara);
+    while (el.firstChild) section.appendChild(el.firstChild);
+    el.replaceWith(section);
+  });
 
   return root.innerHTML;
 }

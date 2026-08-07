@@ -1,0 +1,83 @@
+/**
+ * Geektastic Realms — callout block styling (Stage 20).
+ *
+ * Mirrors the six styled "callout" blocks GR's own block editor produces via
+ * its slash-command menu (Read Aloud, DM Note, Encounter, Treasure, Boxed
+ * Text, DM Secret) — see public/assets/css/app.css in the geektastic-realms
+ * repo, ".read-aloud"/".dm-note"/".encounter-block"/".treasure-block"/
+ * ".boxed-text"/".dm-secret". Colors below are copied from GR's default
+ * (dark) theme so an imported adventure's callouts look the same in Foundry
+ * as they do on GR's own site — same border-left accent color, same
+ * translucent tint. Text color is left to inherit rather than hard-coded, so
+ * this reads correctly against Foundry's own light or dark chrome; the tints
+ * below use rgba() (not GR's own opaque panel colors) for the same reason.
+ *
+ * `rewriteCalloutBlocks()` in scripts/main.js applies these classes to the
+ * <blockquote> it builds at Adventure/Handout import time — see that
+ * function's own docblock for why a <blockquote> (not GR's original <div>)
+ * is what actually survives Foundry's ProseMirror editor. A DM authoring
+ * fresh content directly in Foundry can use these same classes by hand: open
+ * a Journal page, switch its editor to Source/HTML mode (the </> toggle
+ * ProseMirror's own toolbar provides), and wrap a paragraph in
+ * `<blockquote class="read-aloud">…</blockquote>` (etc.) — the exact same
+ * convention GR's own MCP server documents for its own tools (see
+ * `Docs/09-GR-Rich-Text-Formatting.md` in the Geektastic MCP Server repo).
+ *
+ * DM Secret is the one exception — it imports as Foundry's own native
+ * `<section class="secret">` block (GM/Owner-only visible, with Foundry's
+ * built-in reveal-to-players toggle) instead of a labeled blockquote, since
+ * that's a truer match for GR's "hidden until the DM chooses" intent than a
+ * plainly-labeled box everyone can read. The `.dm-secret` class below layers
+ * GR's own accent color on top of Foundry's own secret-block chrome; it does
+ * not replace it.
+ */
+
+.read-aloud {
+  border-left: 4px solid #5b8af0;
+  background: rgba(91, 138, 240, 0.1);
+  padding: 0.75rem 1rem;
+  border-radius: 6px;
+  font-style: italic;
+  margin: 0.5rem 0;
+}
+
+.dm-note {
+  border-left: 4px solid #7c5cff;
+  background: rgba(124, 92, 255, 0.08);
+  padding: 0.6rem 1rem;
+  border-radius: 6px;
+  margin: 0.5rem 0;
+}
+
+.encounter-block {
+  border: 1px solid rgba(127, 127, 127, 0.35);
+  border-left: 3px solid #e2607a;
+  border-radius: 6px;
+  padding: 0.75rem 1rem;
+  margin: 0.75rem 0;
+  background: rgba(127, 127, 127, 0.06);
+}
+
+.boxed-text {
+  border: 1px solid rgba(127, 127, 127, 0.35);
+  border-radius: 6px;
+  padding: 0.75rem 1rem;
+  background: rgba(127, 127, 127, 0.04);
+  margin: 0.75rem 0;
+}
+
+.treasure-block {
+  border-left: 4px solid #d4af37;
+  background: rgba(212, 175, 55, 0.08);
+  padding: 0.75rem 1rem;
+  border-radius: 6px;
+  margin: 0.5rem 0;
+}
+
+.dm-secret {
+  border-left: 4px solid #e2607a;
+  background: rgba(226, 96, 122, 0.08);
+  padding: 0.75rem 1rem;
+  border-radius: 6px;
+  margin: 0.5rem 0;
+}

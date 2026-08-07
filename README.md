@@ -294,16 +294,22 @@ dice, real chat output, no need to open Geektastic Realms mid-session.
 tables you want linked; it composes what they already built rather than creating
 anything new itself.*
 
-In the import hub's **Adventure** tab. Pick a **Module** from the dropdown
-and you'll see its title, summary, and how many sections it has, then click
-**Import Adventure**.
+In the import hub's **Adventure** tab, optionally narrow the **Module** dropdown to
+one campaign with the **Campaign** filter above it ("All modules" shows everything,
+same as before), pick a module, optionally pick a **Select Folder** destination
+(this world's top-level Journal folders only — leave it on "(Top level)" for none),
+and you'll see the module's title, summary, and how many acts/chapters/sections it
+has. Click **Import Adventure**.
 
-Every Act, Chapter, Scene, and Appendix becomes a page in one Journal Entry — the
+Rather than one flat Journal Entry, this builds a real folder tree matching how
+you'd organize it by hand: a top-level Journal folder named after the module
+(wherever Select Folder pointed), containing an **Overview** entry at its root — the
 same journal Import Handouts uses for this module, so a module's narrative and its
-handouts end up together, not in two separate places. Pages come in the same order
-you'd read the adventure top-to-bottom, each with a heading level matching its type
-(Acts as top-level headings, Chapters and Appendices one level in, Scenes another
-level deeper).
+handouts end up together — one **folder + Journal Entry per Act** (that Act's own
+content only), and inside each Act's folder, one **folder + Journal Entry per
+Chapter**, holding that Chapter's own content plus every Scene beneath it as
+additional pages of the same entry. An Appendix (or anything else outside the
+Act/Chapter/Scene shape) lands as a plain entry at the module folder's root.
 
 Anywhere you used **⚔ Insert Encounter**, **📄 Insert Handout**, or **🎲 Insert Roll
 Table** in Geektastic Realms, that reference becomes a real Foundry link — to the
@@ -313,15 +319,49 @@ you've run Import Roll Tables). Anything you haven't imported yet still shows up
 plain text — a name, not a broken link — so nothing looks broken, it just isn't
 clickable yet. Any lore entries linked to a section (its Related Articles) show up
 the same way: linked if that entry has an Actor in this world, plain text otherwise.
+GR's six styled callout blocks (Read Aloud, DM Note, Encounter, Treasure, Boxed
+Text, DM Secret) also carry over — see **Callout block styling** below.
 
-Re-running this later only rebuilds pages whose section actually changed in
-Geektastic Realms since your last import — everything else is left alone. If
-you've added, removed, or reordered sections, every page's position is still kept
-current even when its content wasn't touched, so the journal stays in the right
-order. A failure on one section doesn't stop the rest.
+Re-running this later only rebuilds folders/entries/pages whose section actually
+changed in Geektastic Realms since your last import — everything else is left
+alone, and nothing gets duplicated even if you renamed a module/Act/Chapter in GR
+first. A failure on one section doesn't stop the rest.
 
-The journal opens automatically when the import finishes — from there, run the
-session straight from Foundry.
+The Overview journal opens automatically when the import finishes — from there,
+run the session straight from Foundry.
+
+## Callout block styling
+
+GR's block editor has six styled "callout" blocks — Read Aloud, DM Note, Encounter,
+Treasure, Boxed Text, and DM Secret — used via its `/` slash-command menu. This
+module ships a stylesheet (`styles/gr-callouts.css`) matching GR's own colors, so
+anything imported through Import Handouts or Import Adventure that used one of
+these looks the same in Foundry as it does on GR's own site: a colored left border
+and tinted background, plus a bold label identifying the block type.
+
+DM Secret is the one exception — it imports as Foundry's own native **Secret**
+block (Journal Entries article, "Text Formatting") instead of a colored box:
+GM/Owner-only visible by default, with Foundry's built-in reveal-to-players toggle,
+which is a closer match to "hidden until the DM chooses to reveal it" than a
+plainly-labeled box everyone with page access could read equally.
+
+**To use these classes yourself** when writing fresh content directly in Foundry
+(not just on import): open a Journal page, switch its editor to **Source/HTML**
+mode (the `</>` button in ProseMirror's own toolbar), and wrap a block in one of:
+
+```html
+<blockquote class="read-aloud">Text to read aloud to players.</blockquote>
+<blockquote class="dm-note">A private reminder for the DM only.</blockquote>
+<blockquote class="encounter-block">Encounter setup notes.</blockquote>
+<blockquote class="treasure-block">Loot and rewards.</blockquote>
+<blockquote class="boxed-text">Neutral bordered box.</blockquote>
+<section class="secret">Hidden from players until you reveal it.</section>
+```
+
+Switch back out of Source mode and it'll render styled immediately — the same
+class-name convention GR's own MCP server documents for its own tools (see
+`Docs/09-GR-Rich-Text-Formatting.md` in the Geektastic MCP Server repo), so the
+same markup means the same thing on both sides.
 
 ## Development notes
 
