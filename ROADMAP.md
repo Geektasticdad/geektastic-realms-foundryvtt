@@ -474,7 +474,7 @@ existing response shape.
 
 ---
 
-## Stage 22 — Encounters tab: Campaign filter + Select Folder ✅ code shipped (v2.9.1; live verification still open)
+## Stage 22 — Encounters tab: Campaign filter + Select Folder ✅ code shipped (v2.9.1; two real bugs found in live use and fixed in v2.9.2)
 
 *Stage 21 brought the Handouts/Tables tabs up to the Adventure tab's picker; this
 closes the gap on the last of the four "pick a module" tabs. Deploy Encounter
@@ -493,22 +493,41 @@ design.*
       scope every other Select Folder picker in this module already uses.
 - [x] `findOrCreateEncounterFolder(encounterName, parentFolderId)` gained the new
       parameter: the top-level `Encounters` folder is created under whichever
-      destination the DM chose (or stays at true top level if none), and is moved
-      to match if a different destination is picked on a later deploy — same
-      "moved to match on re-import/re-deploy" pattern this module's other Select
-      Folder pickers already follow.
-- [x] Re-confirmed (no code change needed) that the encounter summary actor
-      feature shipped in Stage 21 — Members from the deployed roster, Loot cloned
-      from each distinct adversary's own physical items, Description composed
-      from GR's Setup/Tactics/Rewards/DM Notes — is still wired in exactly as
-      before; this stage only changes *where* the Encounters folder (and
-      therefore the summary actor alongside it) gets filed.
-- [ ] **Live verification** (not yet done — no live Foundry v14 world available in
-      this pass): confirm a `Folder`'s `.update({ folder: … })` call actually
-      re-parents it under a top-level Actor folder as expected — this specific
-      "move an existing named folder to a new parent" path is new to this stage,
-      distinct from the create-fresh-under-a-parent path Stage 19's folder
-      helpers already established.
+      destination the DM chose (or stays at true top level if none).
+- [x] Re-confirmed (no code change needed at the time) that the encounter summary
+      actor feature shipped in Stage 21 — Members from the deployed roster, Loot
+      cloned from each distinct adversary's own physical items, Description
+      composed from GR's Setup/Tactics/Rewards/DM Notes — was still wired in;
+      turned out to be silently broken (see below).
+
+**v2.9.1's live-verification gap turned into two real, confirmed bugs, both fixed
+in v2.9.2:**
+
+- **Deploys kept landing in a folder a DM had manually reorganized, no matter what
+  Select Folder said.** v2.9.1's `findOrCreateEncounterFolder()` searched for *any*
+  Actor folder named "Encounters" anywhere in the world and force-moved it via
+  `Folder#update({ folder })` to match the current Select Folder choice on every
+  deploy — exactly the "moved to match" behavior this entry originally described,
+  and exactly the code path this entry flagged as unverified. In practice it
+  either didn't re-parent as assumed, or (more likely) was fighting a DM's own
+  manual drag-and-drop reorganization in Foundry's sidebar. Fixed by dropping the
+  hunt-and-relocate behavior entirely: now only reuses an "Encounters" folder
+  that's *already* directly under the exact requested destination; otherwise
+  creates a fresh one there. A DM who deploys under different Select Folder
+  choices over time can end up with more than one "Encounters" folder in
+  different places — visible and predictable, unlike one silently vanishing from
+  where they put it.
+- **The encounter summary actor was never actually being created.**
+  `buildEncounterActor()` had a pre-check —
+  `if (!CONFIG.Actor?.dataModels?.encounter) return null;` — guessing at how
+  dnd5e registers its "encounter" actor type, since that was never confirmed
+  against a live world either. The guess was wrong (or checking the wrong thing),
+  so it silently skipped building the actor even though the dnd5e version in use
+  does support the type. Fixed by removing the pre-check entirely —
+  `Actor.create()` itself is the real, authoritative test of whether the type is
+  valid; the function's existing try/catch already handled a genuine failure
+  there the same way (return null, never block the deploy), just without a wrong
+  guess vetoing a valid attempt first.
 
 **GR dependency:** none — purely Foundry-side, reusing Stage 21's shared picker
 helpers with no new GR endpoint.

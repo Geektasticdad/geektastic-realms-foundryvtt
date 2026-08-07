@@ -1707,23 +1707,33 @@ function syncedActorsByEntryId() {
  * Finds or creates the "Encounters" Actor folder, and within it a subfolder named
  * after this encounter (Stage 10) — every adversary Actor (and, per Stage 21, the
  * encounter summary Actor) a Deploy Encounter run creates lands in
- * `Encounters/{name}`, the same organization a DM would build by hand. Existing
- * folders are reused (by name + parent), so re-deploying the same encounter later
- * doesn't scatter duplicate folders.
+ * `Encounters/{name}`, the same organization a DM would build by hand.
  * @param {?string} parentFolderId - where the "Encounters" folder itself lives
  *   (Stage 22's Select Folder picker — one of this world's top-level Actor
- *   folders); null for top level, the original (and still default) behavior.
- *   Moved to match if the DM picks a different one on a later deploy, same as
- *   this module's other Select Folder pickers already do.
+ *   folders); null for top level.
  * @returns {Promise<string>} the encounter subfolder's id
+ *
+ * Only reuses an "Encounters" folder that's *already* directly under the
+ * requested `parentFolderId` — deliberately does not hunt down and relocate
+ * some other "Encounters" folder found elsewhere in the world (e.g. one a DM
+ * has since dragged somewhere else by hand in Foundry's own UI) to match.
+ * Doing that (an earlier version of this function did) meant a DM's own
+ * manual sidebar organization got silently undone on the next deploy, and
+ * relied on an unverified `Folder#update({ folder })` re-parenting call —
+ * both real risk for one folder lookup. If nothing matches the exact
+ * requested parent, a fresh "Encounters" folder is created there instead;
+ * worst case a DM who deploys under different Select Folder choices over
+ * time ends up with more than one "Encounters" folder, in different places
+ * — visible and unsurprising, unlike a folder disappearing from where they
+ * put it. Same reasoning for the per-encounter child folder below: reused
+ * only if already directly under *this* "Encounters" folder, never moved
+ * from wherever an older one was left.
  */
 async function findOrCreateEncounterFolder(encounterName, parentFolderId) {
   const grandparent = parentFolderId || null;
   let parent = game.folders.find((f) => f.type === 'Actor' && f.name === 'Encounters' && folderIdOf(f) === grandparent);
   if (!parent) {
-    parent = game.folders.find((f) => f.type === 'Actor' && f.name === 'Encounters')
-      || await Folder.create({ name: 'Encounters', type: 'Actor', folder: grandparent });
-    if (folderIdOf(parent) !== grandparent) await parent.update({ folder: grandparent });
+    parent = await Folder.create({ name: 'Encounters', type: 'Actor', folder: grandparent });
   }
   let child = game.folders.find((f) => f.type === 'Actor' && f.folder === parent.id && f.name === encounterName);
   if (!child) {
@@ -1795,17 +1805,18 @@ function encounterDescriptionHtml(encounter) {
  * cleared and rebuilt, not left to pile up across repeated deploys.
  *
  * Best-effort and non-blocking: the "encounter" actor type is a relatively
- * recent addition to the dnd5e system, and this hasn't been confirmed
- * against a live world with a matching dnd5e version — if
- * `CONFIG.Actor.dataModels.encounter` doesn't exist (an older dnd5e), or
- * anything else here throws, this is skipped entirely rather than failing
- * the whole deploy; the adversary Actors/tokens/Combat are unaffected
- * either way.
+ * recent addition to the dnd5e system. This used to pre-check
+ * `CONFIG.Actor.dataModels.encounter` before attempting anything — a guess
+ * at how dnd5e registers the type that was never confirmed against a live
+ * world, and evidently wrong (or checking the wrong thing) since it was
+ * silently skipping this entirely even on a dnd5e version that does
+ * support "encounter" actors. Removed: `Actor.create()` below is the real,
+ * authoritative check — if the type genuinely isn't valid in this world's
+ * system it throws there, caught below, same "return null, never block the
+ * deploy" outcome without the risk of a wrong guess vetoing a valid attempt.
  * @returns {Promise<Actor|null>} the encounter actor, or null if it couldn't be built.
  */
 async function buildEncounterActor(encounter, encounterId, folderId, deployed, onProgress) {
-  if (!CONFIG.Actor?.dataModels?.encounter) return null;
-
   try {
     onProgress?.('Building encounter summary…');
     const members = deployed.map(({ actor, quantity }) => ({

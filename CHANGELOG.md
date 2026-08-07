@@ -9,6 +9,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.9.2] - 2026-08-07
+
+### Fixed
+- **Encounters tab: a deploy could land in the wrong folder, or leave a DM's
+  own manually-organized "Encounters" folder relocated back without asking.**
+  `findOrCreateEncounterFolder()` used to search for *any* Actor folder
+  named "Encounters" anywhere in the world and force-move it to match the
+  current Select Folder choice on every deploy — if a DM had ever dragged
+  that folder somewhere else by hand in Foundry's own UI (or the
+  unverified `Folder#update({ folder })` re-parenting call didn't behave as
+  assumed), new encounters kept landing wherever it was last left, no
+  matter what was picked in Select Folder. Now only reuses an "Encounters"
+  folder that's already directly under the exact requested destination;
+  otherwise creates a fresh one there instead of relocating anything —
+  predictable, and never silently undoes a DM's own organization.
+- **Encounter summary actor was never actually being created.**
+  `buildEncounterActor()` had a pre-check —
+  `if (!CONFIG.Actor?.dataModels?.encounter) return null;` — guessing at
+  how the dnd5e system registers its "encounter" actor type, added out of
+  caution since it was never confirmed against a live world. The guess was
+  wrong (or checking the wrong thing entirely), so it silently skipped
+  building the actor even on dnd5e versions that do support the type.
+  Removed the pre-check — `Actor.create()` itself is the real,
+  authoritative test of whether the type is valid, and the function's
+  existing try/catch already handles a genuine failure there the same way
+  (return null, never block the rest of the deploy), just without the risk
+  of a wrong guess vetoing a valid attempt.
+
 ## [2.9.1] - 2026-08-07
 
 ### Added
@@ -822,7 +850,8 @@ verification" checklist item.
   response).
 - Verified against Foundry VTT v13. Not yet tested against v14.
 
-[Unreleased]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.9.1...HEAD
+[Unreleased]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.9.2...HEAD
+[2.9.2]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.9.1...v2.9.2
 [2.9.1]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.9.0...v2.9.1
 [2.9.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.8.1...v2.9.0
 [2.8.1]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.8.0...v2.8.1
