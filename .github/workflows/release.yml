@@ -36,7 +36,15 @@ jobs:
           # the zip's contents directly into it. A wrapping folder here would
           # reproduce the "folder name must match id exactly" bug already hit
           # once during manual install (see Stage 2 in the main repo's build log).
-          zip -r module.zip module.json scripts README.md CHANGELOG.md LICENSE
+          #
+          # This list must stay in sync with every top-level asset directory
+          # module.json references (esmodules/styles/etc.) — v2.8.0 shipped a
+          # broken install because `styles/` (added for Stage 20's
+          # gr-callouts.css) was never added here: Foundry's installer validates
+          # every file module.json lists actually exists in the package and
+          # fails the whole install (PACKAGE.InstallFailed) if one is missing,
+          # rather than installing without it.
+          zip -r module.zip module.json scripts styles README.md CHANGELOG.md LICENSE
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2

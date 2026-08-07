@@ -24,10 +24,17 @@ field always points at `main`; its `download` field always points at the
    ```
 5. **Verify the run**: [`.github/workflows/release.yml`](.github/workflows/release.yml)
    checks the tag matches `module.json`'s version (fails loudly if not), zips
-   `module.json`, `scripts/`, `README.md`, `CHANGELOG.md`, and `LICENSE` at the
-   zip root (**no wrapping folder** — Foundry's installer creates
-   `Data/modules/<id>/` itself and extracts the zip straight into it), and
-   publishes a GitHub Release with `module.zip` attached.
+   `module.json`, `scripts/`, `styles/`, `README.md`, `CHANGELOG.md`, and
+   `LICENSE` at the zip root (**no wrapping folder** — Foundry's installer
+   creates `Data/modules/<id>/` itself and extracts the zip straight into it),
+   and publishes a GitHub Release with `module.zip` attached. **If you add a
+   new top-level asset directory** (another `styles/`-like folder, a new
+   `esmodules` path, etc.), add it to that `zip -r` command too — Foundry's
+   installer validates every file `module.json` references actually exists in
+   the package and fails the entire install (`PACKAGE.InstallFailed`) if one
+   is missing, rather than installing without it. This bit v2.8.0: `styles/`
+   was added for Stage 20 but never added to the zip command, so every install
+   of that version failed outright.
 6. **Smoke-test the manifest URL** in a real (or fresh) Foundry world:
    **Add-on Modules → Install Module**, paste
    `https://raw.githubusercontent.com/Geektasticdad/geektastic-realms-foundryvtt/main/module.json`,

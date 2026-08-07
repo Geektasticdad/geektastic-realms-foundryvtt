@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.8.1] - 2026-08-07
+
+### Fixed
+- **v2.8.0's release zip was broken and failed to install entirely**
+  (`PACKAGE.InstallFailed` — "The file 'styles/gr-callouts.css' included by
+  module ... does not exist"). `.github/workflows/release.yml`'s `zip -r`
+  command listed `module.json scripts README.md CHANGELOG.md LICENSE`
+  explicitly and was never updated when Stage 20 added a `styles/` directory,
+  so the published zip never actually contained the stylesheet
+  `module.json`'s new `styles` array pointed at — Foundry's installer
+  validates every referenced file exists in the package and refuses the
+  whole install if one is missing. Added `styles` to the zip command; no
+  functional code changed since v2.8.0.
+
 ## [2.8.0] - 2026-08-07
 
 ### Added
@@ -769,7 +783,8 @@ verification" checklist item.
   response).
 - Verified against Foundry VTT v13. Not yet tested against v14.
 
-[Unreleased]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.8.0...HEAD
+[Unreleased]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.8.1...HEAD
+[2.8.1]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.8.0...v2.8.1
 [2.8.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.7.0...v2.8.0
 [2.7.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.6.0...v2.7.0
 [2.6.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.5.0...v2.6.0
