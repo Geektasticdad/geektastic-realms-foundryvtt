@@ -9,6 +9,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.7.0] - 2026-08-06
+
+### Added
+- **Adventure tab: Campaign filter + Select Folder picker (Stage 17).** A new
+  Campaign dropdown (populated from GR's new `GET /api/foundry/v1/campaigns`)
+  narrows the Module picker to that campaign's modules — "All modules" keeps
+  the original unfiltered list. A new Select Folder dropdown lists this
+  world's top-level Journal folders only (not nested ones), letting a DM
+  import at the top level or drop the whole adventure under an existing
+  folder.
+
+### Changed
+- **Adventure import now builds an organized folder tree instead of one flat
+  Journal Entry.** Importing a module creates its own top-level Journal
+  folder (placed wherever Select Folder points), containing: an Overview
+  Journal Entry at the root (unchanged — still the same entry Handouts/Stage
+  11 imports into); one folder + Journal Entry per Act, holding just that
+  Act's own content; and inside each Act's folder, one folder + Journal Entry
+  per Chapter, holding that Chapter's own content plus every Scene beneath it
+  as additional pages of the same entry. Re-importing updates entries/folders
+  in place (by GR id flag, not by name) rather than duplicating them — same
+  convergent-rebuild approach every other sync stage in this module already
+  uses.
+
 ## [2.6.0] - 2026-08-01
 
 ### Fixed
@@ -718,7 +742,8 @@ verification" checklist item.
   response).
 - Verified against Foundry VTT v13. Not yet tested against v14.
 
-[Unreleased]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.6.0...HEAD
+[Unreleased]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.7.0...HEAD
+[2.7.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.6.0...v2.7.0
 [2.6.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.5.0...v2.6.0
 [2.5.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.4.0...v2.5.0
 [2.4.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.3.0...v2.4.0

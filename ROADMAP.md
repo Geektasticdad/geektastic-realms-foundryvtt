@@ -301,13 +301,65 @@ mapping, per-batch `status`/`visibility`, custom-field population, `POST
 
 ---
 
+## Stage 19 — Adventure import: Campaign filter + organized folder tree ✅ code shipped (v2.7.0; live verification still open)
+
+*Stage 13's Adventure import worked but produced one flat Journal Entry per module —
+every Act/Chapter/Scene as a page in one long list, and no way to pick which campaign's
+module to import or where in the sidebar it landed. This restructures both the picker
+and the import target to match how a DM actually organizes a folder tree by hand.*
+
+- [x] **Campaign filter.** New `GET /api/foundry/v1/campaigns` (GR, id/title only) backs
+      a Campaign dropdown above the Adventure tab's Module picker — `fetchCampaignList()`.
+      "All modules" (the default) keeps the original unfiltered list; picking a campaign
+      re-filters the already-fetched module list client-side by the new `campaign_id`
+      field `GET /api/foundry/v1/modules` now returns per module (GR-side, additive) —
+      no second round trip. `_adventureRenderModuleOptions()`.
+- [x] **Select Folder picker.** A new dropdown lists this world's *top-level* Journal
+      folders only (`game.folders.filter(f => f.type === 'JournalEntry' && !f.folder)`)
+      — `_adventurePopulateFolders()` — so a DM can import at the top level or drop the
+      whole adventure under an existing folder, matching the Actors tab's "Create in
+      folder" picker's spirit but intentionally shallow (first depth only) rather than
+      showing every nested subfolder, since this picker chooses where the *new* import
+      folder goes, not a specific destination folder itself.
+- [x] **Organized folder tree on import**, replacing the single flat journal:
+      `findOrCreateModuleFolder()` creates/reuses one top-level Journal folder per
+      module (flagged by `grModuleId`, parented under whatever Select Folder chose).
+      Inside it: the Overview Journal Entry at the root (unchanged from Stage 13 — same
+      entry Stage 11/Handouts finds via `findModuleJournal()`, now additionally
+      filtered to exclude anything carrying a `grSectionId` flag so it keeps resolving
+      to just this one entry); one `findOrCreateSectionFolder()` + `importSectionJournal()`
+      pair per Act, holding just that Act's own content; and inside each Act's folder,
+      one folder+entry pair per Chapter, with every Scene beneath it flattened into that
+      same entry as additional pages (`importSectionJournal(..., includeDescendants:
+      true)`). An Appendix (or any other non-Act top-level section) gets a plain entry
+      at the module folder's root, same treatment as a Chapter minus the subfolder.
+- [x] Re-import is convergent, not duplicating — every folder/entry is found by GR id
+      flag (`grModuleId`/`grSectionId`), not by name, so renaming a module/Act/Chapter
+      in GR and re-importing updates in place, same pattern every other sync stage in
+      this module already uses.
+- [ ] **Live verification** (not yet done — no live Foundry v14 world available in this
+      pass): confirm `Folder.create()`/`folder.update({folder: ...})` behave as expected
+      for nested `JournalEntry`-type folders; confirm a Folder document's `.folder`
+      getter really does return a raw id (not a resolved `Folder` object) on a live v14
+      instance — `folderIdOf()` was written to tolerate either shape defensively, but
+      that's unverified against a real world; spot-check a real multi-Act, multi-Chapter
+      adventure import and a re-import (confirm no duplicate folders/entries appear).
+
+**GR dependency:** shipped in GR v2.17.4 (`GET /api/foundry/v1/campaigns`, plus
+`campaign_id` added to `GET /api/foundry/v1/modules`) — both purely additive, no
+breaking change to the existing modules payload.
+
+---
+
 ## Sequencing
 
 Stage 8 gates everything (verify before building). Stages 9 → 10 are strictly ordered
 (encounter deploy reuses re-sync). Stages 11 and 12 are independent of each other and
-of 10, but all three precede 13. Stages 14–17 float — schedule opportunistically
+of 10, but all three precede 13. Stages 14–19 float — schedule opportunistically
 alongside GR-side releases, matching the milestone table in the main repo's
 [ROADMAP.md](https://github.com/Geektasticdad/geektastic-realms/blob/main/ROADMAP.md).
 Stage 16's GR dependency (Roadmap 2.8) shipped in GR v2.0.0; only its own live
 verification remains open. Stage 17 floats independently of Stage 16, gated only on
-GR's Roadmap 2.9 shipping first (it has, in GR v2.1.0).
+GR's Roadmap 2.9 shipping first (it has, in GR v2.1.0). Stage 19 depends only on
+Stage 13 (it restructures Stage 13's output) and its own small GR-side addition
+(v2.17.4) — independent of Stages 14–18.

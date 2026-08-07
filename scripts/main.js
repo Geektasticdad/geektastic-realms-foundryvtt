@@ -69,6 +69,19 @@ function escapeHtml(value) {
   }[ch]));
 }
 
+/**
+ * Normalizes a document's `.folder` reference to a plain parent-folder id (or
+ * null) — `Folder` documents expose it as a raw id string (see
+ * `findOrCreateEncounterFolder()` below), but other document types' `.folder`
+ * getter can return the resolved `Folder` document itself depending on Foundry
+ * version, so this accepts either shape rather than assuming one.
+ */
+function folderIdOf(doc) {
+  const f = doc?.folder;
+  if (f == null) return null;
+  return typeof f === 'string' ? f : (f.id ?? null);
+}
+
 function getServerConfig() {
   return {
     serverUrl: (game.settings.get(MODULE_ID, 'serverUrl') || '').trim().replace(/\/+$/, ''),
@@ -354,6 +367,11 @@ async function fetchModuleList() {
   return apiFetch('/api/foundry/v1/modules');
 }
 
+/** Fetches every campaign in the connected GR world (Stage 19 — Adventure tab's campaign filter). */
+async function fetchCampaignList() {
+  return apiFetch('/api/foundry/v1/campaigns');
+}
+
 /** Fetches every encounter (with its adversary roster) in one module (Stage 10, picker step 2). */
 async function fetchModuleEncounters(moduleId) {
   return apiFetch(`/api/foundry/v1/modules/${moduleId}/encounters`);
@@ -489,12 +507,19 @@ async function uploadIconToFoundry(mediaId, cache) {
 }
 
 /**
- * Finds this module's Journal Entry (Stage 11), if it's been imported before —
- * flagged with `grModuleId` rather than found by name, so renaming the module or
- * the journal afterward doesn't break re-import lookup.
+ * Finds this module's own Overview Journal Entry (Stage 11), if it's been
+ * imported before — flagged with `grModuleId` rather than found by name, so
+ * renaming the module or the journal afterward doesn't break re-import lookup.
+ * Stage 19 gave every Act/Chapter its own Journal Entry too (see
+ * `importSectionJournal()`), all of which also carry `grModuleId` — those are
+ * additionally flagged with `grSectionId`, so excluding anything with that flag
+ * here keeps this resolving to the same single "module journal" Stage 11
+ * (Handouts) and the hid- ref-context lookup in `importAdventure()` have always
+ * depended on, both unaware Stage 19 exists.
  */
 function findModuleJournal(moduleId) {
-  return game.journal.find((j) => j.getFlag(MODULE_ID, 'grModuleId') === moduleId) || null;
+  return game.journal.find((j) => j.getFlag(MODULE_ID, 'grModuleId') === moduleId
+    && j.getFlag(MODULE_ID, 'grSectionId') == null) || null;
 }
 
 /**
@@ -861,18 +886,99 @@ async function importAdventurePage(journal, flagKey, flagValue, { name, level, c
 }
 
 /**
- * Imports a whole module as one Journal Entry (Stage 13, the capstone composing
- * Stages 9–12): an overview page, then one page per section in depth-first tree
- * order, each with its encounter-ref/handout-ref/roll-table-ref chips rewritten
- * into links to whatever Stage 10–12 documents already exist, and its Related
- * Articles appended as a linked-where-possible footer. Reuses the same per-module
- * Journal Entry Stage 11 already creates (via findModuleJournal()) — a module's
- * handouts and its narrative end up in one place, not two competing journals.
- * Deliberately does not create any Actors/RollTables/handout pages itself — those
- * are Stages 9–12's job; this stage only links to what already exists.
+ * Creates or updates one section's own Journal Entry (Stage 19), placed in
+ * `folderId`. The section's own content is always page 1; when
+ * `includeDescendants` is true, every descendant in the section's subtree
+ * (depth-first, e.g. a Chapter's Scenes) is flattened into one page each after
+ * it, in the same Journal Entry — Foundry's page model has no real
+ * page-within-page nesting, so "a Chapter and all its Scenes in one entry"
+ * means exactly this. Acts pass `includeDescendants: false` since each of
+ * their Chapters gets its own separate Journal Entry instead (see
+ * `importAdventure()`); everything else (a Chapter, an Appendix, or any other
+ * leaf-ish section) passes `true`.
  * @returns {Promise<{journal: JournalEntry, created: number, updated: number, unchanged: number}>}
  */
-async function importAdventure(moduleId, onProgress) {
+async function importSectionJournal(moduleId, folderId, section, ctx, includeDescendants) {
+  let journal = game.journal.find((j) => j.getFlag(MODULE_ID, 'grModuleId') === moduleId
+    && j.getFlag(MODULE_ID, 'grSectionId') === section.id);
+
+  if (!journal) {
+    journal = await JournalEntry.create({
+      name: section.title,
+      folder: folderId || null,
+      flags: { [MODULE_ID]: { grModuleId: moduleId, grSectionId: section.id, grEntryKind: section.type } },
+    });
+  } else {
+    const updates = {};
+    if (journal.name !== section.title) updates.name = section.title;
+    if (folderIdOf(journal) !== (folderId || null)) updates.folder = folderId || null;
+    if (Object.keys(updates).length) await journal.update(updates);
+  }
+
+  let created = 0;
+  let updated = 0;
+  let unchanged = 0;
+  const tally = (result) => {
+    if (!result.changed) unchanged++;
+    else if (result.isNew) created++;
+    else updated++;
+  };
+
+  const ownContent = rewriteCalloutBlocks(rewriteAdventureRefs(section.body_html, ctx))
+    + relatedEntriesFooter(section.related_entries, ctx.actorsByEntryId);
+  tally(await importAdventurePage(journal, 'grSectionId', section.id, {
+    name: section.title,
+    level: SECTION_HEADING_LEVEL[section.type] || 2,
+    content: ownContent,
+    contentHash: section.content_hash,
+    sortOrder: 0,
+  }));
+
+  if (includeDescendants) {
+    const descendants = flattenSectionTree(section.children || []);
+    for (let i = 0; i < descendants.length; i++) {
+      const child = descendants[i];
+      const content = rewriteCalloutBlocks(rewriteAdventureRefs(child.body_html, ctx))
+        + relatedEntriesFooter(child.related_entries, ctx.actorsByEntryId);
+      tally(await importAdventurePage(journal, 'grSectionId', child.id, {
+        name: child.title,
+        level: SECTION_HEADING_LEVEL[child.type] || 2,
+        content,
+        contentHash: child.content_hash,
+        sortOrder: (i + 1) * 100000,
+      }));
+    }
+  }
+
+  return { journal, created, updated, unchanged };
+}
+
+/**
+ * Imports a whole module as an organized folder tree of Journal Entries (Stage
+ * 19, superseding Stage 13's single flat journal): one Journal Entry for the
+ * Adventure overview at the root of the module's own folder, one folder+entry
+ * per Act (its own content only), and inside each Act's folder one
+ * folder+entry per Chapter (its own content plus every Scene beneath it
+ * flattened into that same entry as extra pages) — see `importSectionJournal()`
+ * for exactly how the "own content + flattened descendants" entries are built.
+ * Any top-level section that isn't an Act (e.g. an Appendix) gets a plain entry
+ * at the root of the module's folder instead, same treatment as a Chapter minus
+ * the subfolder. A non-Chapter child under an Act (unusual, but the section
+ * tree doesn't forbid it) falls back to the same treatment, placed directly in
+ * the Act's folder.
+ *
+ * Every encounter-ref/handout-ref/roll-table-ref chip is rewritten into a link
+ * to whatever Stage 10–12 documents already exist, and each section's Related
+ * Articles are appended as a linked-where-possible footer, same as Stage 13.
+ * The Overview entry is the same one Stage 11 (Handouts) finds via
+ * `findModuleJournal()` — a module's handouts and its narrative overview still
+ * end up in one place. Deliberately does not create any Actors/RollTables/
+ * handout pages itself — those are Stages 9–12's job; this stage only links to
+ * what already exists.
+ * @param {?string} parentFolderId - where the module's own folder is created/kept; null for top level.
+ * @returns {Promise<{journal: JournalEntry, folder: Folder, created: number, updated: number, unchanged: number}>}
+ */
+async function importAdventure(moduleId, parentFolderId, onProgress) {
   onProgress?.('Fetching adventure…');
   const [prepared, encountersResult, handoutsResult, rollTablesResult] = await Promise.all([
     fetchModulePrepare(moduleId),
@@ -886,16 +992,24 @@ async function importAdventure(moduleId, onProgress) {
   const handoutsById = new Map((handoutsResult.body?.handouts || []).map((h) => [h.id, h]));
   const rollTables = rollTablesResult.body?.roll_tables || [];
   const rollTableTitlesById = new Map(rollTables.map((t) => [t.id, t.title]));
+  const moduleTitle = prepared.body.module.title;
+
+  onProgress?.('Preparing folders…');
+  const moduleFolder = await findOrCreateModuleFolder(moduleId, moduleTitle, parentFolderId);
 
   let journal = findModuleJournal(moduleId);
   if (!journal) {
-    onProgress?.('Creating journal…');
+    onProgress?.('Creating overview journal…');
     journal = await JournalEntry.create({
-      name: prepared.body.module.title,
+      name: moduleTitle,
+      folder: moduleFolder.id,
       flags: { [MODULE_ID]: { grModuleId: moduleId } },
     });
-  } else if (journal.name !== prepared.body.module.title) {
-    await journal.update({ name: prepared.body.module.title });
+  } else {
+    const updates = {};
+    if (journal.name !== moduleTitle) updates.name = moduleTitle;
+    if (folderIdOf(journal) !== moduleFolder.id) updates.folder = moduleFolder.id;
+    if (Object.keys(updates).length) await journal.update(updates);
   }
 
   const handoutPagesByGrId = new Map();
@@ -921,34 +1035,42 @@ async function importAdventure(moduleId, onProgress) {
     else if (result.isNew) created++;
     else updated++;
   };
+  const addTotals = (r) => { created += r.created; updated += r.updated; unchanged += r.unchanged; };
 
   onProgress?.('Importing overview…');
   const overviewContent = rewriteCalloutBlocks(rewriteAdventureRefs(prepared.body.module.overview || '', ctx))
     + relatedEntriesFooter(prepared.body.module_related_entries, ctx.actorsByEntryId);
   tally(await importAdventurePage(journal, 'grPageKind', 'overview', {
-    name: prepared.body.module.title,
+    name: moduleTitle,
     level: 1,
     content: overviewContent,
     contentHash: prepared.body.module.content_hash,
     sortOrder: 0,
   }));
 
-  const flatSections = flattenSectionTree(prepared.body.sections);
-  for (let i = 0; i < flatSections.length; i++) {
-    const section = flatSections[i];
-    onProgress?.(`Importing "${section.title}"… (${i + 1}/${flatSections.length})`);
-    const content = rewriteCalloutBlocks(rewriteAdventureRefs(section.body_html, ctx))
-      + relatedEntriesFooter(section.related_entries, ctx.actorsByEntryId);
-    tally(await importAdventurePage(journal, 'grSectionId', section.id, {
-      name: section.title,
-      level: SECTION_HEADING_LEVEL[section.type] || 2,
-      content,
-      contentHash: section.content_hash,
-      sortOrder: (i + 1) * 100000,
-    }));
+  const topSections = prepared.body.sections || [];
+  for (let i = 0; i < topSections.length; i++) {
+    const section = topSections[i];
+    onProgress?.(`Importing "${section.title}"… (${i + 1}/${topSections.length})`);
+
+    if (section.type === 'act') {
+      const actFolder = await findOrCreateSectionFolder(moduleId, section, moduleFolder.id);
+      addTotals(await importSectionJournal(moduleId, actFolder.id, section, ctx, false));
+
+      for (const child of section.children || []) {
+        if (child.type === 'chapter') {
+          const chapterFolder = await findOrCreateSectionFolder(moduleId, child, actFolder.id);
+          addTotals(await importSectionJournal(moduleId, chapterFolder.id, child, ctx, true));
+        } else {
+          addTotals(await importSectionJournal(moduleId, actFolder.id, child, ctx, true));
+        }
+      }
+    } else {
+      addTotals(await importSectionJournal(moduleId, moduleFolder.id, section, ctx, true));
+    }
   }
 
-  return { journal, created, updated, unchanged };
+  return { journal, folder: moduleFolder, created, updated, unchanged };
 }
 
 /** GR size word -> Foundry dnd5e size code. */
@@ -1498,6 +1620,65 @@ async function findOrCreateEncounterFolder(encounterName) {
     child = await Folder.create({ name: encounterName, type: 'Actor', folder: parent.id });
   }
   return child.id;
+}
+
+/**
+ * Finds or creates this module's own top-level Journal folder (Stage 19) — every
+ * Journal Entry an Adventure import creates (the overview entry, plus one per Act
+ * and one per Chapter, in their own subfolders) lands inside this one folder, so
+ * a whole adventure import/re-import is one self-contained tree in the sidebar
+ * rather than a flat pile of top-level entries. Found by `grModuleId` flag
+ * (survives a rename), not by name. `parentFolderId` is whatever the DM chose in
+ * the Adventure tab's "Select Folder" picker — null for top level.
+ */
+async function findOrCreateModuleFolder(moduleId, moduleTitle, parentFolderId) {
+  const parent = parentFolderId || null;
+  let folder = game.folders.find((f) => f.type === 'JournalEntry'
+    && f.getFlag(MODULE_ID, 'grModuleId') === moduleId
+    && f.getFlag(MODULE_ID, 'grSectionId') == null);
+
+  if (!folder) {
+    folder = await Folder.create({
+      name: moduleTitle,
+      type: 'JournalEntry',
+      folder: parent,
+      flags: { [MODULE_ID]: { grModuleId: moduleId } },
+    });
+  } else {
+    const updates = {};
+    if (folder.name !== moduleTitle) updates.name = moduleTitle;
+    if (folderIdOf(folder) !== parent) updates.folder = parent;
+    if (Object.keys(updates).length) await folder.update(updates);
+  }
+  return folder;
+}
+
+/**
+ * Finds or creates the Journal folder for one Act or Chapter (Stage 19), nested
+ * under `parentFolderId` (the module's own folder for an Act, that Act's folder
+ * for a Chapter). Found by `grSectionId` flag, same rename-proof lookup pattern
+ * as every other Stage 9–17 find-or-create helper in this module.
+ */
+async function findOrCreateSectionFolder(moduleId, section, parentFolderId) {
+  const parent = parentFolderId || null;
+  let folder = game.folders.find((f) => f.type === 'JournalEntry'
+    && f.getFlag(MODULE_ID, 'grModuleId') === moduleId
+    && f.getFlag(MODULE_ID, 'grSectionId') === section.id);
+
+  if (!folder) {
+    folder = await Folder.create({
+      name: section.title,
+      type: 'JournalEntry',
+      folder: parent,
+      flags: { [MODULE_ID]: { grModuleId: moduleId, grSectionId: section.id } },
+    });
+  } else {
+    const updates = {};
+    if (folder.name !== section.title) updates.name = section.title;
+    if (folderIdOf(folder) !== parent) updates.folder = parent;
+    if (Object.keys(updates).length) await folder.update(updates);
+  }
+  return folder;
 }
 
 /**
@@ -2142,8 +2323,10 @@ class ImportHubForm extends GrfcApplication {
 
     // One shared modules fetch — Encounters/Handouts/Tables/Adventure all start with
     // "pick a module," so this avoids four independent GET .../modules calls firing
-    // the instant the hub opens; populateModuleSelect() awaits this same promise four
-    // times instead of each starting its own fetch.
+    // the instant the hub opens; each of those four tabs awaits this same promise
+    // instead of starting its own fetch (Adventure resolves it directly — see
+    // `_adventureLoadModules()` — since it also needs the raw list cached for its
+    // Campaign-filter re-render; the other three go through `populateModuleSelect()`).
     const modulesPromise = fetchModuleList();
 
     this._actorsActivate(html.find('.grfc-hub-content > [data-tab="actors"]'));
@@ -2777,14 +2960,27 @@ class ImportHubForm extends GrfcApplication {
     await this._tablesLoadList(tab);
   }
 
-  // ── Adventure (Stage 13: import a whole module as one structured Journal) ───
+  // ── Adventure (Stage 13: import a whole module as structured Journals; Stage
+  //    19: Campaign filter, Select Folder, and the organized folder tree) ─────
 
   _adventureTabHtml() {
     return `
       <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.5rem;">
+        <label style="white-space:nowrap;color:var(--color-text-dark-secondary,#666);font-size:.85em;">Campaign:</label>
+        <select class="grfc-adventure-campaign-select" style="flex:1 1 auto;min-width:0;">
+          <option value="">All modules</option>
+        </select>
+      </div>
+      <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.5rem;">
         <label style="white-space:nowrap;color:var(--color-text-dark-secondary,#666);font-size:.85em;">Module:</label>
         <select class="grfc-module-select" style="flex:1 1 auto;min-width:0;" disabled>
           <option value="">Loading modules…</option>
+        </select>
+      </div>
+      <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.5rem;">
+        <label style="white-space:nowrap;color:var(--color-text-dark-secondary,#666);font-size:.85em;">Select Folder:</label>
+        <select class="grfc-adventure-folder-select" style="flex:1 1 auto;min-width:0;">
+          <option value="">(Top level)</option>
         </select>
       </div>
       <div class="grfc-adventure-preview" style="flex:1 1 auto;overflow-y:auto;color:var(--color-text-dark-secondary,#666);font-size:.9em;line-height:1.5;"></div>
@@ -2794,19 +2990,84 @@ class ImportHubForm extends GrfcApplication {
   }
 
   _adventureActivate(tab, modulesPromise) {
+    this._adventureLoadCampaigns(tab);
     this._adventureLoadModules(tab, modulesPromise);
+    this._adventurePopulateFolders(tab);
+    tab.find('.grfc-adventure-campaign-select').on('change', () => {
+      this._adventureRenderModuleOptions(tab);
+      this._adventureLoadPreview(tab);
+    });
     tab.find('.grfc-module-select').on('change', () => this._adventureLoadPreview(tab));
     tab.find('.grfc-import-adventure-btn').on('click', () => this._adventureDoImport(tab));
   }
 
+  /** Populates the Campaign filter — purely additive; "All modules" (no campaign chosen) preserves the original unfiltered picker. */
+  async _adventureLoadCampaigns(tab) {
+    const select = tab.find('.grfc-adventure-campaign-select');
+    const result = await fetchCampaignList();
+    if (!result.ok) {
+      // Non-fatal: the campaign filter is an optional convenience — leave it at
+      // "All modules" and let the module picker load normally either way.
+      console.warn('Geektastic Realms Foundry Connect: failed to load campaigns.', result.error);
+      return;
+    }
+    (result.body.campaigns || []).forEach((c) => select.append(`<option value="${c.id}">${escapeHtml(c.title)}</option>`));
+  }
+
+  /** Populates the target-folder dropdown from this world's *top-level* Journal folders only — first depth, not nested. */
+  _adventurePopulateFolders(tab) {
+    const select = tab.find('.grfc-adventure-folder-select');
+    const folders = game.folders
+      .filter((f) => f.type === 'JournalEntry' && !f.folder)
+      .map((f) => ({ id: f.id, name: f.name }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    folders.forEach((f) => select.append(`<option value="${escapeHtml(f.id)}">${escapeHtml(f.name)}</option>`));
+  }
+
   async _adventureLoadModules(tab, modulesPromise) {
-    await populateModuleSelect(
-      tab.find('.grfc-module-select'),
-      tab.find('#grfc-adventure-status'),
-      'No adventure modules found in this Geektastic Realms world.',
-      'Choose a module to import.',
-      modulesPromise
-    );
+    const status = tab.find('#grfc-adventure-status');
+    const moduleSelect = tab.find('.grfc-module-select');
+
+    const result = await modulesPromise;
+    if (!result.ok) {
+      status.text(`✘ ${result.error}`).css('color', '#c62828');
+      return;
+    }
+
+    const modules = result.body.modules || [];
+    tab.data('grfc-modules', modules);
+    if (modules.length === 0) {
+      moduleSelect.empty().append('<option value="">No modules in this world</option>');
+      status.text('No adventure modules found in this Geektastic Realms world.');
+      return;
+    }
+
+    this._adventureRenderModuleOptions(tab);
+    moduleSelect.prop('disabled', false);
+    status.text('Choose a module to import.');
+  }
+
+  /** Rebuilds the Module <select>'s options from the cached module list, filtered to the selected Campaign (if any) — no extra GR round trip. */
+  _adventureRenderModuleOptions(tab) {
+    const moduleSelect = tab.find('.grfc-module-select');
+    const campaignId = tab.find('.grfc-adventure-campaign-select').val();
+    const modules = tab.data('grfc-modules') || [];
+    const filtered = campaignId
+      ? modules.filter((m) => String(m.campaign_id ?? '') === String(campaignId))
+      : modules;
+
+    const previousValue = moduleSelect.val();
+    moduleSelect.empty();
+    if (filtered.length === 0) {
+      moduleSelect.append('<option value="">No modules in this campaign</option>');
+      return;
+    }
+    moduleSelect.append('<option value="">Choose a module…</option>');
+    filtered.forEach((m) => moduleSelect.append(`<option value="${m.id}">${escapeHtml(m.title)}</option>`));
+    if (filtered.some((m) => String(m.id) === String(previousValue))) {
+      moduleSelect.val(previousValue);
+    }
   }
 
   async _adventureLoadPreview(tab) {
@@ -2830,11 +3091,16 @@ class ImportHubForm extends GrfcApplication {
     }
 
     const mod = result.body.module;
-    const sectionCount = flattenSectionTree(result.body.sections).length;
+    const sections = result.body.sections || [];
+    const acts = sections.filter((s) => s.type === 'act');
+    const chapters = acts.flatMap((a) => (a.children || []).filter((c) => c.type === 'chapter'));
+    const sectionCount = flattenSectionTree(sections).length;
     preview.html(`
       <p><strong>${escapeHtml(mod.title)}</strong></p>
       <p>${escapeHtml(mod.summary || 'No summary.')}</p>
-      <p>${sectionCount} section${sectionCount === 1 ? '' : 's'} will become pages of one Journal Entry, alongside any handouts already imported for this module.</p>
+      <p>${sectionCount} section${sectionCount === 1 ? '' : 's'} total — an Overview entry at the top, ${acts.length}
+      act${acts.length === 1 ? '' : 's'} and ${chapters.length} chapter${chapters.length === 1 ? '' : 's'} each get their
+      own folder and Journal Entry, with every scene nested as a page under its chapter's entry.</p>
     `);
     status.text('Ready to import.').css('color', '');
     importBtn.prop('disabled', false);
@@ -2842,6 +3108,7 @@ class ImportHubForm extends GrfcApplication {
 
   async _adventureDoImport(tab) {
     const moduleId = tab.find('.grfc-module-select').val();
+    const parentFolderId = tab.find('.grfc-adventure-folder-select').val() || null;
     const status = tab.find('#grfc-adventure-status');
     const importBtn = tab.find('.grfc-import-adventure-btn');
     if (!moduleId) return;
@@ -2850,7 +3117,7 @@ class ImportHubForm extends GrfcApplication {
     status.css('color', '');
 
     try {
-      const { journal, created, updated, unchanged } = await importAdventure(moduleId, (msg) => status.text(msg));
+      const { journal, created, updated, unchanged } = await importAdventure(moduleId, parentFolderId, (msg) => status.text(msg));
       const parts = [];
       if (created) parts.push(`${created} created`);
       if (updated) parts.push(`${updated} updated`);
