@@ -407,11 +407,78 @@ than requiring any GR-side change.
 
 ---
 
+## Stage 21 — Handouts/Tables picker parity + Encounter summary actor ✅ code shipped (v2.9.0; live verification still open)
+
+*Stage 19 gave the Adventure tab a Campaign filter, a Select Folder destination, and
+per-module organization — this brings the Handouts and Tables tabs up to the same
+picker, plus lets a DM import a subset instead of all-or-nothing. Separately, Deploy
+Encounter gets a real summary artifact instead of just scattering individual Actors:
+one sheet with who's in the fight, what they were carrying, and the DM's own prep
+notes.*
+
+- [x] **Shared picker helpers**, extracted from Stage 19's Adventure-tab-only code
+      into top-level functions (`populateCampaignSelect()`,
+      `renderModuleOptionsForCampaign()`, `populateTopLevelFolderSelect()`) so the
+      Adventure/Handouts/Tables tabs share one implementation instead of three
+      near-identical copies.
+- [x] **Handouts tab**: Campaign filter, Select Folder (top-level Journal folders),
+      and a checkbox per handout (checked by default) — `_handoutsDoImport()` now
+      fetches fresh data and filters to only the checked ids before calling
+      `importHandouts()`, which gained a `folderId` parameter and now moves an
+      already-imported journal to match on re-import, same as a rename already did.
+- [x] **Tables tab**: same treatment — Campaign filter, Select Folder (top-level
+      RollTable folders), checkbox per table. `importRollTable()` gained a
+      `folderId` parameter; a table whose content is unchanged but whose folder
+      differs from the current selection is now treated as needing an update
+      (folder move only) rather than being skipped as "unchanged."
+- [x] **Encounters tab: consolidated checkboxes.** "Place tokens on the current
+      scene" and "Also create a Combat encounter" merged into one — a Combat
+      without placed tokens already fell back to actor-only combatants, so there
+      was never a real reason to want one without the other.
+- [x] **Encounter summary actor.** `buildEncounterActor()` creates/updates a dnd5e
+      `type: "encounter"` Actor per deploy (dnd5e's own purpose-built "collection
+      of adversaries" actor type, `module/data/actor/encounter.mjs` upstream —
+      confirmed via the dnd5e system's own source, not guessed at), in the same
+      `Encounters/{name}` folder as the individual adversary Actors:
+  - `system.members[]` — every deployed adversary's UUID + quantity.
+  - Loot — each *distinct* deployed adversary's physical-type items
+    (weapon/equipment/consumable/tool/loot/container) cloned onto the actor once
+    per creature type (not multiplied by quantity), tagged with
+    `grLootSourceActorId` so a re-deploy clears and rebuilds them convergently
+    rather than piling up duplicates.
+  - `system.description.full` — GR's own Setup/Tactics/Rewards/DM Notes,
+    composed by a new `encounterDescriptionHtml()` through the same
+    callout-block/ref-chip rewrite every other GR rich-text field gets.
+  - Best-effort: guarded by `CONFIG.Actor.dataModels.encounter` — an older dnd5e
+    without the "encounter" actor type just skips this step silently, the rest
+    of Deploy is unaffected.
+- [x] **GR API**: `setup`/`tactics`/`rewards`/`notes` added to
+      `GET /api/foundry/v1/encounter/{id}/prepare`'s `encounter` object — the
+      encounter form's own rich-text fields, previously not exposed to the
+      Foundry module at all.
+- [ ] **Live verification** (not yet done — no live Foundry v14 world available in
+      this pass, and no dnd5e version confirmed to include the "encounter" actor
+      type at hand either): confirm `RollTable.create()`/`JournalEntry.create()`
+      actually accept `folder` alongside the other fields used together in one
+      call (used individually elsewhere in this module, not yet confirmed
+      combined); most importantly, confirm the "encounter" actor type exists and
+      behaves as documented upstream against a real dnd5e install — Members tab
+      shows the roster with correct XP, Loot tab shows the cloned items, and
+      Description renders the composed HTML — since this is the one piece this
+      pass that's entirely new Foundry/dnd5e surface for this module, not an
+      extension of an already-verified pattern.
+
+**GR dependency:** shipped in GR v2.17.5 (`setup`/`tactics`/`rewards`/`notes` added
+to the encounter prepare payload) — purely additive, no breaking change to the
+existing response shape.
+
+---
+
 ## Sequencing
 
 Stage 8 gates everything (verify before building). Stages 9 → 10 are strictly ordered
 (encounter deploy reuses re-sync). Stages 11 and 12 are independent of each other and
-of 10, but all three precede 13. Stages 14–20 float — schedule opportunistically
+of 10, but all three precede 13. Stages 14–21 float — schedule opportunistically
 alongside GR-side releases, matching the milestone table in the main repo's
 [ROADMAP.md](https://github.com/Geektasticdad/geektastic-realms/blob/main/ROADMAP.md).
 Stage 16's GR dependency (Roadmap 2.8) shipped in GR v2.0.0; only its own live
@@ -420,4 +487,6 @@ GR's Roadmap 2.9 shipping first (it has, in GR v2.1.0). Stage 19 depends only on
 Stage 13 (it restructures Stage 13's output) and its own small GR-side addition
 (v2.17.4) — independent of Stages 14–18. Stage 20 has no GR dependency at all and
 touches only `rewriteCalloutBlocks()` (shared by Stages 11 and 13/19) plus a new
-stylesheet — independent of every other stage.
+stylesheet — independent of every other stage. Stage 21 depends on Stage 10 (deploy)
+and Stage 19 (the picker helpers it factors out and reuses) plus its own small
+GR-side addition (v2.17.5) — independent of Stage 20.

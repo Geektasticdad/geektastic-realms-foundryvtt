@@ -234,56 +234,81 @@ on demand, and reused rather than duplicated if you deploy the same encounter ag
 later. A failure on one creature doesn't stop the rest; you'll see how many succeeded
 and, if any failed, which ones and why.
 
-Leave **"Place tokens on the current scene"** checked (the default) and one token per
-creature is dropped onto whichever scene you currently have open, arranged in a
-simple grid centered on wherever you're looking — 6 hobgoblins in the roster means 6
-tokens on the map. If no scene is open, this is skipped and the result tells you so;
-the Actors are still created either way.
+Leave **"Place tokens on the current scene and create a linked Combat encounter"**
+checked (the default) and one token per creature is dropped onto whichever scene you
+currently have open, arranged in a simple grid centered on wherever you're looking —
+6 hobgoblins in the roster means 6 tokens on the map — and a Combat is built
+alongside them, with one combatant per placed token, linked to the real token on the
+map so the tracker and the scene agree from the moment you click Deploy. If no scene
+is open, token placement is skipped and the Combat falls back to an actor-only
+combatant per quantity instead — the Actors are still created either way, you'll just
+need to link those combatants to tokens yourself later.
 
-Leave **"Also create a Combat encounter"** checked (the default) too, and a Combat is
-built alongside them, with one combatant per placed token — linked to the real token
-on the map, so the tracker and the scene agree from the moment you click Deploy, no
-manual linking needed. If token placement was skipped (box unchecked, or no scene
-open), the Combat still gets an actor-only combatant per quantity instead — you'll
-need to link those to tokens yourself later, the same as adding any non-token
-combatant by hand.
+**Encounter summary actor (Stage 21).** Every deploy also creates (or updates) one
+extra Actor — a dnd5e "encounter" type, named after the encounter, in the same
+`Encounters/{encounter name}` folder — summarizing the whole fight on one sheet:
+- **Members** — every adversary you just deployed, with its quantity, so dnd5e's own
+  Members tab can total XP/difficulty for you.
+- **Loot** — each *distinct* creature's own weapons/equipment/consumables/etc.
+  (dnd5e's usual definition of "physical" items) cloned onto this actor once per
+  creature type — open its Loot tab after the fight to hand everything out without
+  digging through five separate NPC sheets. Not multiplied by quantity; if you need
+  three coin pouches instead of one, duplicate it by hand.
+- **Description** — the encounter's own Setup/Tactics/Rewards/DM Notes from
+  Geektastic Realms, so your prep notes are on the same sheet as the fight.
+
+Re-deploying rebuilds Members/Loot/Description from scratch each time rather than
+piling up duplicates. This needs a dnd5e system version that has the "encounter"
+actor type — if yours doesn't, this step is silently skipped and everything else
+above still works normally.
 
 ## Importing Handouts
 
-In the import hub's **Handouts** tab. Pick a **Module** from the dropdown,
-and every handout in it appears below with a status — **New**, **✓ Up to date**, or
-**↻ Changed** — so you can see what's about to happen before clicking anything.
+In the import hub's **Handouts** tab, optionally narrow the **Module** dropdown to
+one campaign with the **Campaign** filter above it, pick a module, and optionally
+pick a **Select Folder** destination (this world's top-level Journal folders only —
+leave it on "(Top level)" for none). Every handout in the module appears below with a
+checkbox (checked by default — uncheck any you don't want this run) and a status —
+**New**, **✓ Up to date**, or **↻ Changed**.
 
-Click **Import Handouts** and every handout in that module becomes a page in one
-Journal Entry named after the module — image (if it has one) above the rich-text
-body, one page per handout. Re-running this later finds that same Journal Entry
-again (even if you've renamed it) and only touches pages whose handout actually
-changed since — an unchanged handout's page is left completely alone, not
-re-uploaded or rewritten. A failure on one handout doesn't stop the rest; you'll see
-how many were created, updated, or already current, and if any failed, which ones
-and why.
+Click **Import Selected Handouts** and every checked handout becomes a page in one
+Journal Entry named after the module, placed in whichever folder you chose — image
+(if it has one) above the rich-text body, one page per handout. Re-running this later
+finds that same Journal Entry again (even if you've renamed or moved it) and only
+touches pages whose handout actually changed since — an unchanged handout's page is
+left completely alone, not re-uploaded or rewritten. Leaving a handout unchecked just
+means this run doesn't touch its page — it isn't removed if it was already imported.
+A failure on one handout doesn't stop the rest; you'll see how many were created,
+updated, or already current, and if any failed, which ones and why.
 
 The journal opens automatically when the import finishes. From there, use Foundry's
 native **Show to Players** on any page at the table — that's the whole point.
 
 ## Importing Roll Tables
 
-In the import hub's **Tables** tab. Pick a **Module** from the
-dropdown, and every roll table in it appears below — die size, row count, which
-section it's in, and a status (**New**, **✓ Up to date**, or **↻ Changed**).
+In the import hub's **Tables** tab, optionally narrow the **Module** dropdown to one
+campaign with the **Campaign** filter above it, pick a module, and optionally pick a
+**Select Folder** destination (this world's top-level RollTable folders only — leave
+it on "(Top level)" for none). Every roll table in the module appears below with a
+checkbox (checked by default — uncheck any you don't want this run) — die size, row
+count, which section it's in, and a status (**New**, **✓ Up to date**, or
+**↻ Changed**).
 
-Click **Import Roll Tables** and each one becomes a native Foundry RollTable
-document: ranges become result ranges, the computed die becomes the roll formula,
-and each row's title/description become the result text. If the table's die has
-unused faces above its highest authored range (e.g. 16 options rounding up to a
-d20), a "No result" row fills the gap automatically, the same padding Geektastic
-Realms' own web view already shows — a roll never comes up empty. DM notes stay
-behind on the Geektastic Realms side; only the rows themselves are imported.
+Click **Import Selected Tables** and each checked one becomes a native Foundry
+RollTable document, placed in whichever folder you chose: ranges become result
+ranges, the computed die becomes the roll formula, and each row's title/description
+become the result text. If the table's die has unused faces above its highest
+authored range (e.g. 16 options rounding up to a d20), a "No result" row fills the
+gap automatically, the same padding Geektastic Realms' own web view already shows —
+a roll never comes up empty. DM notes stay behind on the Geektastic Realms side; only
+the rows themselves are imported.
 
-Re-running this later finds the same RollTable again (even if you've renamed it)
-and only rebuilds tables whose content actually changed since — an unchanged
-table is left completely alone. Editing a DM-only note without changing any row
-never counts as a change. A failure on one table doesn't stop the rest.
+Re-running this later finds the same RollTable again (even if you've renamed or
+moved it) and only rebuilds tables whose content or folder actually changed since —
+an unchanged table left in the same folder is left completely alone. Editing a
+DM-only note without changing any row never counts as a change. Leaving a table
+unchecked just means this run doesn't touch it. A failure on one table doesn't stop
+the rest.
 
 Once imported, roll the table from Foundry's own Rollable Tables sidebar — real
 dice, real chat output, no need to open Geektastic Realms mid-session.

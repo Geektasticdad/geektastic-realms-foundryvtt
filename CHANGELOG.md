@@ -9,6 +9,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.9.0] - 2026-08-07
+
+### Added
+- **Handouts and Tables tabs: Campaign filter, Select Folder, per-item
+  checkboxes (Stage 21).** Both tabs now match the Adventure tab's picker: a
+  Campaign dropdown narrows the Module list, a Select Folder dropdown picks
+  a destination (this world's top-level Journal/RollTable folders), and
+  every handout/table in the list gets its own checkbox (checked by
+  default) so a DM can import a subset instead of all-or-nothing.
+  `importHandouts()`/`importRollTable()` now accept and apply a
+  `folderId`, moving an already-imported journal/table to match on
+  re-import too.
+- **Encounter summary actor (Stage 21).** Every Deploy now also creates (or
+  updates) a dnd5e "encounter"-type Actor summarizing the fight: Members
+  (every deployed adversary + quantity), Loot (each distinct adversary's
+  own physical items, cloned on once per creature type), and Description
+  (GR's own Setup/Tactics/Rewards/DM Notes, newly exposed on
+  `GET /api/foundry/v1/encounter/{id}/prepare`). Best-effort and
+  non-blocking — skipped entirely on a dnd5e version without the
+  "encounter" actor type, never failing the rest of a deploy.
+
+### Changed
+- **Encounters tab: consolidated "Place tokens" and "Also create Combat"
+  into one checkbox** — the two were always meant to be used together (a
+  Combat without placed tokens just falls back to actor-only combatants
+  anyway), so there was never a real reason to want one without the other.
+
 ## [2.8.1] - 2026-08-07
 
 ### Fixed
@@ -783,7 +810,8 @@ verification" checklist item.
   response).
 - Verified against Foundry VTT v13. Not yet tested against v14.
 
-[Unreleased]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.8.1...HEAD
+[Unreleased]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.9.0...HEAD
+[2.9.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.8.1...v2.9.0
 [2.8.1]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.8.0...v2.8.1
 [2.8.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.7.0...v2.8.0
 [2.7.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.6.0...v2.7.0

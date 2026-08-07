@@ -555,23 +555,30 @@ function handoutPageContent(handout, imgPath) {
 }
 
 /**
- * Imports every handout in a module as pages of one Journal Entry (Stage 11) —
- * created on first import, found and reused (by `grModuleId` flag) on later ones.
- * Each page is flagged with `grHandoutId`/`grContentHash`; a page whose hash still
- * matches the handout's current `content_hash` is left untouched (not
- * re-uploaded/re-written), the same change-detection approach Stage 9/10 use for
- * Actors and encounters. A failure on one handout doesn't abort the rest.
+ * Imports every handout in `handouts` (Stage 21: whichever ones the DM left
+ * checked in the Handouts tab's list — previously always all of a module's
+ * handouts) as pages of one Journal Entry (Stage 11) — created on first
+ * import, found and reused (by `grModuleId` flag) on later ones. Each page is
+ * flagged with `grHandoutId`/`grContentHash`; a page whose hash still matches
+ * the handout's current `content_hash` is left untouched (not re-uploaded/
+ * re-written), the same change-detection approach Stage 9/10 use for Actors
+ * and encounters. A failure on one handout doesn't abort the rest.
+ * `folderId` (Stage 21) is this world's chosen destination Journal folder —
+ * moved to match on every re-import too, same as a renamed journal's name is.
  * @returns {Promise<{journal: JournalEntry, created: number, updated: number, unchanged: number, failed: {name: string, error: string}[]}>}
  */
-async function importHandouts(moduleId, moduleTitle, handouts, onProgress) {
+async function importHandouts(moduleId, moduleTitle, handouts, onProgress, folderId) {
   const iconCache = new Map();
 
   let journal = findModuleJournal(moduleId);
   if (!journal) {
     onProgress?.('Creating journal…');
-    journal = await JournalEntry.create({ name: moduleTitle, flags: { [MODULE_ID]: { grModuleId: moduleId } } });
-  } else if (journal.name !== moduleTitle) {
-    await journal.update({ name: moduleTitle });
+    journal = await JournalEntry.create({ name: moduleTitle, folder: folderId || null, flags: { [MODULE_ID]: { grModuleId: moduleId } } });
+  } else {
+    const updates = {};
+    if (journal.name !== moduleTitle) updates.name = moduleTitle;
+    if (folderIdOf(journal) !== (folderId || null)) updates.folder = folderId || null;
+    if (Object.keys(updates).length) await journal.update(updates);
   }
 
   let created = 0;
@@ -655,8 +662,10 @@ function rollTableRowText(row) {
  * in place on later ones. Every existing TableResult is cleared and rebuilt from
  * GR's current rows on update, the same convergent-rebuild approach Stage 9 uses for
  * an Actor's items — simpler and safer than trying to diff individual rows.
+ * `folderId` (Stage 21) is this world's chosen destination RollTable folder — moved
+ * to match on every re-import too, same as a renamed table's name is.
  */
-async function importRollTable(table, existing, onProgress) {
+async function importRollTable(table, existing, onProgress, folderId) {
   onProgress?.(`Importing "${table.title}"…`);
 
   const faces = parseInt(String(table.die).replace(/[^\d]/g, ''), 10) || 20;
@@ -671,11 +680,11 @@ async function importRollTable(table, existing, onProgress) {
 
   let doc = existing;
   if (existing) {
-    await existing.update({ name: table.title, formula, flags });
+    await existing.update({ name: table.title, formula, folder: folderId || null, flags });
     const staleIds = existing.results.map((r) => r.id);
     if (staleIds.length) await existing.deleteEmbeddedDocuments('TableResult', staleIds);
   } else {
-    doc = await RollTable.create({ name: table.title, formula, flags });
+    doc = await RollTable.create({ name: table.title, formula, folder: folderId || null, flags });
   }
   if (resultsData.length) await doc.createEmbeddedDocuments('TableResult', resultsData);
   return doc;
@@ -1618,6 +1627,68 @@ async function populateModuleSelect(select, status, emptyMessage, readyMessage, 
 }
 
 /**
+ * Populates a Campaign filter `<select>` — shared by every tab that offers one
+ * (Stage 19: Adventure; Stage 21: Handouts, Tables). The caller's static tab
+ * HTML already has the default "All modules"/unfiltered option in place; this
+ * only appends the real campaigns after it. Non-fatal on failure — a DM can
+ * still use the tab with an unfiltered module list either way, so this just
+ * logs a console warning rather than surfacing an error in the tab's own
+ * status line (which is showing module-loading progress, not this).
+ */
+async function populateCampaignSelect(select) {
+  const result = await fetchCampaignList();
+  if (!result.ok) {
+    console.warn('Geektastic Realms Foundry Connect: failed to load campaigns.', result.error);
+    return;
+  }
+  (result.body.campaigns || []).forEach((c) => select.append(`<option value="${c.id}">${escapeHtml(c.title)}</option>`));
+}
+
+/**
+ * Rebuilds a Module `<select>`'s options from a cached raw module list (each
+ * with an optional `campaign_id`, per `GET /api/foundry/v1/modules`),
+ * filtered to whatever the paired Campaign `<select>` currently has chosen —
+ * an empty selection means "All modules," preserving every tab's original
+ * unfiltered behavior. Shared by the Adventure (Stage 19), Handouts, and
+ * Tables (Stage 21) tabs; called both on initial load and on every Campaign
+ * `change` event. Keeps the previously-selected module if it's still in the
+ * filtered set, so switching Campaign doesn't blow away a valid selection.
+ */
+function renderModuleOptionsForCampaign(moduleSelect, campaignSelect, modules) {
+  const campaignId = campaignSelect.val();
+  const filtered = campaignId
+    ? modules.filter((m) => String(m.campaign_id ?? '') === String(campaignId))
+    : modules;
+
+  const previousValue = moduleSelect.val();
+  moduleSelect.empty();
+  if (filtered.length === 0) {
+    moduleSelect.append('<option value="">No modules in this campaign</option>');
+    return;
+  }
+  moduleSelect.append('<option value="">Choose a module…</option>');
+  filtered.forEach((m) => moduleSelect.append(`<option value="${m.id}">${escapeHtml(m.title)}</option>`));
+  if (filtered.some((m) => String(m.id) === String(previousValue))) {
+    moduleSelect.val(previousValue);
+  }
+}
+
+/**
+ * Populates a "Select Folder" `<select>` with this world's *top-level*
+ * folders of the given document type only (first depth, not nested) — shared
+ * by the Adventure (Stage 19), Handouts, and Tables (Stage 21) tabs. The
+ * caller's static tab HTML already has the "(Top level)" default option in
+ * place; this only appends the real folders after it.
+ */
+function populateTopLevelFolderSelect(select, docType) {
+  const folders = game.folders
+    .filter((f) => f.type === docType && !f.folder)
+    .map((f) => ({ id: f.id, name: f.name }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  folders.forEach((f) => select.append(`<option value="${escapeHtml(f.id)}">${escapeHtml(f.name)}</option>`));
+}
+
+/**
  * Every Actor in this world previously created by this module, keyed by the GR entry
  * id it was built from (Stage 9's `grEntryId` flag) — shared by the Create Actor
  * picker (New / Up to date / Changed per row) and the Deploy Encounter picker (Stage
@@ -1650,6 +1721,128 @@ async function findOrCreateEncounterFolder(encounterName) {
     child = await Folder.create({ name: encounterName, type: 'Actor', folder: parent.id });
   }
   return child.id;
+}
+
+/** dnd5e "physical" item types that show under a Group/Encounter actor's Loot tab. */
+const LOOT_ITEM_TYPES = new Set(['weapon', 'equipment', 'consumable', 'tool', 'loot', 'container', 'backpack']);
+
+/**
+ * Finds this encounter's own summary Actor (Stage 21), if it's been deployed
+ * before — flagged with `grEncounterId` rather than found by name, same
+ * rename-proof lookup every other find-or-create helper in this module uses.
+ */
+function findEncounterActor(encounterId) {
+  return game.actors.find((a) => a.getFlag(MODULE_ID, 'grEncounterId') === encounterId) || null;
+}
+
+/**
+ * Composes GR's encounter Setup/Tactics/Rewards/DM Notes (Stage 21 addition
+ * to `GET /api/foundry/v1/encounter/{id}/prepare`) into one HTML block for
+ * the encounter actor's `system.description.full` — run through the same
+ * callout-block/ref-chip rewrite every other GR rich-text field gets on its
+ * way into Foundry, since a DM could plausibly use GR's block editor's
+ * conventions in any of these four fields too. Uses `emptyRefContext()` (no
+ * cross-module ref resolution) rather than building a full context — same
+ * scope Import Handouts already uses for its own body text.
+ */
+function encounterDescriptionHtml(encounter) {
+  const ctx = emptyRefContext();
+  const sections = [
+    ['Setup', encounter.setup],
+    ['Tactics', encounter.tactics],
+    ['Rewards', encounter.rewards],
+    ['DM Notes', encounter.notes],
+  ];
+  return sections
+    .filter(([, html]) => html && html.trim() !== '')
+    .map(([label, html]) => `<h3>${escapeHtml(label)}</h3>${rewriteCalloutBlocks(rewriteAdventureRefs(html, ctx))}`)
+    .join('');
+}
+
+/**
+ * Creates or updates a dnd5e "encounter" actor summarizing a whole deployed
+ * encounter (Stage 21) — dnd5e's own purpose-built actor type for "a
+ * collection of adversaries" (`module/data/actor/encounter.mjs` upstream),
+ * giving a DM one sheet with:
+ *  - **Members** — every deployed adversary Actor plus how many of it were
+ *    deployed (`system.members[].uuid`/`.quantity.value`), letting dnd5e's
+ *    own Members tab compute XP totals/difficulty for the fight.
+ *  - **Loot** — each *distinct* deployed adversary's own physical-type
+ *    items (weapon/equipment/consumable/tool/loot/container — dnd5e's own
+ *    definition of what a Group/Encounter sheet's Loot tab lists) cloned
+ *    onto this actor once per creature type, not multiplied by quantity — a
+ *    DM handing out loot after the fight can multiply by hand if every
+ *    individual creature's own copy matters. This is "loot based on the
+ *    actor tokens" (as opposed to GR's own free-text `rewards` field, which
+ *    goes into Description below instead) — everything the monsters were
+ *    carrying, collected in one place, without opening five NPC sheets.
+ *  - **Description** — GR's own Setup/Tactics/Rewards/DM Notes fields
+ *    (`system.description.full`), so a DM's prep notes live on the same
+ *    sheet as the fight itself.
+ *
+ * Fully convergent on re-deploy, same as every other sync stage in this
+ * module: members and loot are rebuilt from the current deploy each time,
+ * not accumulated — a stale loot item (flagged `grLootSourceActorId`) is
+ * cleared and rebuilt, not left to pile up across repeated deploys.
+ *
+ * Best-effort and non-blocking: the "encounter" actor type is a relatively
+ * recent addition to the dnd5e system, and this hasn't been confirmed
+ * against a live world with a matching dnd5e version — if
+ * `CONFIG.Actor.dataModels.encounter` doesn't exist (an older dnd5e), or
+ * anything else here throws, this is skipped entirely rather than failing
+ * the whole deploy; the adversary Actors/tokens/Combat are unaffected
+ * either way.
+ * @returns {Promise<Actor|null>} the encounter actor, or null if it couldn't be built.
+ */
+async function buildEncounterActor(encounter, encounterId, folderId, deployed, onProgress) {
+  if (!CONFIG.Actor?.dataModels?.encounter) return null;
+
+  try {
+    onProgress?.('Building encounter summary…');
+    const members = deployed.map(({ actor, quantity }) => ({
+      uuid: actor.uuid,
+      quantity: { value: quantity, formula: '' },
+    }));
+    const description = { full: encounterDescriptionHtml(encounter), summary: '' };
+
+    let doc = findEncounterActor(encounterId);
+    if (!doc) {
+      doc = await Actor.create({
+        name: encounter.name,
+        type: 'encounter',
+        folder: folderId || null,
+        system: { members, description },
+        flags: { [MODULE_ID]: { grEncounterId: encounterId } },
+      });
+    } else {
+      const updates = { name: encounter.name, 'system.members': members, 'system.description': description };
+      if (folderIdOf(doc) !== (folderId || null)) updates.folder = folderId || null;
+      await doc.update(updates);
+
+      const staleLootIds = doc.items.filter((i) => i.getFlag(MODULE_ID, 'grLootSourceActorId') != null).map((i) => i.id);
+      if (staleLootIds.length) await doc.deleteEmbeddedDocuments('Item', staleLootIds);
+    }
+
+    const seenSourceActors = new Set();
+    const lootItems = [];
+    for (const { actor } of deployed) {
+      if (seenSourceActors.has(actor.id)) continue;
+      seenSourceActors.add(actor.id);
+      for (const item of actor.items) {
+        if (!LOOT_ITEM_TYPES.has(item.type)) continue;
+        const data = item.toObject();
+        delete data._id;
+        data.flags = { ...(data.flags || {}), [MODULE_ID]: { grLootSourceActorId: actor.id } };
+        lootItems.push(data);
+      }
+    }
+    if (lootItems.length) await doc.createEmbeddedDocuments('Item', lootItems);
+
+    return doc;
+  } catch (err) {
+    console.warn('Geektastic Realms Foundry Connect: failed to build the encounter summary actor.', err);
+    return null;
+  }
 }
 
 /**
@@ -2530,13 +2723,9 @@ class ImportHubForm extends GrfcApplication {
           <option value="">Loading modules…</option>
         </select>
       </div>
-      <label style="display:flex;align-items:center;gap:.4rem;margin-bottom:.3rem;font-size:.9em;">
-        <input type="checkbox" class="grfc-place-tokens" checked>
-        Place tokens on the current scene (one per creature)
-      </label>
       <label style="display:flex;align-items:center;gap:.4rem;margin-bottom:.5rem;font-size:.9em;">
-        <input type="checkbox" class="grfc-create-combat" checked>
-        Also create a Combat encounter, linked to the placed tokens
+        <input type="checkbox" class="grfc-deploy-to-scene" checked>
+        Place tokens on the current scene and create a linked Combat encounter
       </label>
       <p id="grfc-encounter-status" style="color:var(--color-text-dark-secondary,#666);margin:.25rem 0 .5rem;">Loading modules…</p>
       <ul class="grfc-encounter-list" style="list-style:none;margin:0;padding:0;flex:1 1 auto;overflow-y:auto"></ul>
@@ -2631,8 +2820,13 @@ class ImportHubForm extends GrfcApplication {
           return;
         }
 
-        const placeTokens = tab.find('.grfc-place-tokens').is(':checked');
-        const createCombat = tab.find('.grfc-create-combat').is(':checked');
+        // Place-tokens and create-combat used to be two separate checkboxes,
+        // but a Combat without placed tokens just falls back to actor-only
+        // combatants anyway (see below) — one control now drives both, since
+        // there was never a real reason to want one without the other.
+        const deployToScene = tab.find('.grfc-deploy-to-scene').is(':checked');
+        const placeTokens = deployToScene;
+        const createCombat = deployToScene;
         const preparedAdversaries = prepared.body.adversaries || [];
         const folderId = await findOrCreateEncounterFolder(prepared.body.encounter?.name || encounter.name);
 
@@ -2690,9 +2884,9 @@ class ImportHubForm extends GrfcApplication {
                 // tracker together, ready to run immediately.
                 for (const token of tokens) combatants.push({ tokenId: token.id, sceneId: token.parent.id, actorId: actor.id });
               } else {
-                // No token placed (box unchecked, or no active scene) — still add
-                // an actor-only combatant so the roster is at least in the tracker;
-                // the DM links it to a token manually later.
+                // No token placed (no active scene) — still add an actor-only
+                // combatant so the roster is at least in the tracker; the DM
+                // links it to a token manually later.
                 for (let n = 0; n < quantity; n++) combatants.push({ actorId: actor.id });
               }
             }
@@ -2703,10 +2897,27 @@ class ImportHubForm extends GrfcApplication {
           }
         }
 
+        // Stage 21: a dnd5e "encounter" summary actor with every deployed
+        // adversary as a Member, their carried physical items as Loot, and
+        // GR's own Setup/Tactics/Rewards/DM Notes as its Description — best
+        // effort, never blocks the deploy above (see buildEncounterActor()'s
+        // own docblock for why it can quietly return null).
+        let encounterActor = null;
+        if (deployed.length > 0) {
+          encounterActor = await buildEncounterActor(
+            prepared.body.encounter || { name: encounter.name },
+            encounter.id,
+            folderId,
+            deployed,
+            (msg) => rowStatus.text(msg)
+          );
+        }
+
         btn.prop('disabled', false);
         const parts = [`${deployed.length} adversar${deployed.length === 1 ? 'y' : 'ies'}`];
         if (placeTokens) parts.push(noActiveScene ? 'no active scene to place tokens on' : 'tokens placed');
         if (createCombat) parts.push('combat created');
+        if (encounterActor) parts.push('encounter summary updated');
         if (failed.length === 0) {
           rowStatus.text('✔ Deployed').css('color', '#2e7d32');
           ui.notifications.info(`Geektastic Realms Foundry Connect: deployed "${encounter.name}" (${parts.join(', ')}).`);
@@ -2720,36 +2931,80 @@ class ImportHubForm extends GrfcApplication {
     });
   }
 
-  // ── Handouts (Stage 11: import a module's handouts as Journal pages) ────────
+  // ── Handouts (Stage 11: import a module's handouts as Journal pages; Stage
+  //    21: Campaign filter, Select Folder, per-handout checkboxes) ───────────
 
   _handoutsTabHtml() {
     return `
+      <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.5rem;">
+        <label style="white-space:nowrap;color:var(--color-text-dark-secondary,#666);font-size:.85em;">Campaign:</label>
+        <select class="grfc-handouts-campaign-select" style="flex:1 1 auto;min-width:0;">
+          <option value="">All modules</option>
+        </select>
+      </div>
       <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.5rem;">
         <label style="white-space:nowrap;color:var(--color-text-dark-secondary,#666);font-size:.85em;">Module:</label>
         <select class="grfc-module-select" style="flex:1 1 auto;min-width:0;" disabled>
           <option value="">Loading modules…</option>
         </select>
       </div>
+      <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.5rem;">
+        <label style="white-space:nowrap;color:var(--color-text-dark-secondary,#666);font-size:.85em;">Select Folder:</label>
+        <select class="grfc-handouts-folder-select" style="flex:1 1 auto;min-width:0;">
+          <option value="">(Top level)</option>
+        </select>
+      </div>
       <p id="grfc-handouts-status" style="color:var(--color-text-dark-secondary,#666);margin:.25rem 0 .5rem;">Loading modules…</p>
       <ul class="grfc-handouts-list" style="list-style:none;margin:0;padding:0;flex:1 1 auto;overflow-y:auto"></ul>
-      <button type="button" class="grfc-import-handouts-btn" style="margin-top:.5rem;" disabled>Import Handouts</button>
+      <button type="button" class="grfc-import-handouts-btn" style="margin-top:.5rem;" disabled>Import Selected Handouts</button>
     `;
   }
 
   _handoutsActivate(tab, modulesPromise) {
+    this._handoutsLoadCampaigns(tab);
     this._handoutsLoadModules(tab, modulesPromise);
+    this._handoutsPopulateFolders(tab);
+    tab.find('.grfc-handouts-campaign-select').on('change', () => {
+      this._handoutsRenderModuleOptions(tab);
+      this._handoutsLoadList(tab);
+    });
     tab.find('.grfc-module-select').on('change', () => this._handoutsLoadList(tab));
     tab.find('.grfc-import-handouts-btn').on('click', () => this._handoutsDoImport(tab));
   }
 
+  async _handoutsLoadCampaigns(tab) {
+    await populateCampaignSelect(tab.find('.grfc-handouts-campaign-select'));
+  }
+
+  _handoutsPopulateFolders(tab) {
+    populateTopLevelFolderSelect(tab.find('.grfc-handouts-folder-select'), 'JournalEntry');
+  }
+
   async _handoutsLoadModules(tab, modulesPromise) {
-    await populateModuleSelect(
-      tab.find('.grfc-module-select'),
-      tab.find('#grfc-handouts-status'),
-      'No adventure modules found in this Geektastic Realms world.',
-      'Choose a module to see its handouts.',
-      modulesPromise
-    );
+    const status = tab.find('#grfc-handouts-status');
+    const moduleSelect = tab.find('.grfc-module-select');
+
+    const result = await modulesPromise;
+    if (!result.ok) {
+      status.text(`✘ ${result.error}`).css('color', '#c62828');
+      return;
+    }
+
+    const modules = result.body.modules || [];
+    tab.data('grfc-modules', modules);
+    if (modules.length === 0) {
+      moduleSelect.empty().append('<option value="">No modules in this world</option>');
+      status.text('No adventure modules found in this Geektastic Realms world.');
+      return;
+    }
+
+    this._handoutsRenderModuleOptions(tab);
+    moduleSelect.prop('disabled', false);
+    status.text('Choose a module to see its handouts.');
+  }
+
+  _handoutsRenderModuleOptions(tab) {
+    renderModuleOptionsForCampaign(tab.find('.grfc-module-select'), tab.find('.grfc-handouts-campaign-select'), tab.data('grfc-modules') || []);
   }
 
   async _handoutsLoadList(tab) {
@@ -2778,7 +3033,7 @@ class ImportHubForm extends GrfcApplication {
       status.text('No handouts in this module.');
       return;
     }
-    status.text(`${handouts.length} handout${handouts.length === 1 ? '' : 's'} in this module.`);
+    status.text(`${handouts.length} handout${handouts.length === 1 ? '' : 's'} available — uncheck any you don't want to import.`);
 
     const journal = findModuleJournal(moduleId);
     handouts.forEach((handout) => {
@@ -2788,7 +3043,8 @@ class ImportHubForm extends GrfcApplication {
       const statusColor = !existingPage ? 'var(--color-text-dark-secondary,#666)' : isChanged ? '#b26a00' : '#2e7d32';
 
       const li = $(`
-        <li style="display:flex;align-items:center;gap:.5rem;padding:.35rem 0;border-bottom:1px solid #7773;">
+        <li data-gr-id="${handout.id}" style="display:flex;align-items:center;gap:.5rem;padding:.35rem 0;border-bottom:1px solid #7773;">
+          <input type="checkbox" class="grfc-row-check" checked style="flex:0 0 auto;">
           <span style="flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
             <strong>${escapeHtml(handout.title)}</strong>
             <span style="color:var(--color-text-dark-secondary,#666);font-size:.85em;">${handout.section_title ? ' — ' + escapeHtml(handout.section_title) : ''}</span>
@@ -2806,9 +3062,19 @@ class ImportHubForm extends GrfcApplication {
     const select = tab.find('.grfc-module-select');
     const moduleId = select.val();
     const moduleTitle = select.find('option:selected').text();
+    const folderId = tab.find('.grfc-handouts-folder-select').val() || null;
     const status = tab.find('#grfc-handouts-status');
     const importBtn = tab.find('.grfc-import-handouts-btn');
     if (!moduleId) return;
+
+    const checkedIds = new Set(
+      tab.find('.grfc-handouts-list > li').filter((_, el) => $(el).find('.grfc-row-check').is(':checked'))
+        .map((_, el) => String($(el).data('gr-id'))).get()
+    );
+    if (checkedIds.size === 0) {
+      status.text('No handouts selected — check at least one to import.').css('color', '#b26a00');
+      return;
+    }
 
     importBtn.prop('disabled', true);
     status.css('color', '');
@@ -2820,12 +3086,13 @@ class ImportHubForm extends GrfcApplication {
       return;
     }
 
-    const handouts = result.body.handouts || [];
+    const handouts = (result.body.handouts || []).filter((h) => checkedIds.has(String(h.id)));
     const { journal, created, updated, unchanged, failed } = await importHandouts(
       moduleId,
       moduleTitle,
       handouts,
-      (msg) => status.text(msg)
+      (msg) => status.text(msg),
+      folderId
     );
 
     const parts = [];
@@ -2847,36 +3114,80 @@ class ImportHubForm extends GrfcApplication {
     await this._handoutsLoadList(tab);
   }
 
-  // ── Tables (Stage 12: import a module's roll tables as native RollTables) ───
+  // ── Tables (Stage 12: import a module's roll tables as native RollTables;
+  //    Stage 21: Campaign filter, Select Folder, per-table checkboxes) ────────
 
   _tablesTabHtml() {
     return `
+      <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.5rem;">
+        <label style="white-space:nowrap;color:var(--color-text-dark-secondary,#666);font-size:.85em;">Campaign:</label>
+        <select class="grfc-tables-campaign-select" style="flex:1 1 auto;min-width:0;">
+          <option value="">All modules</option>
+        </select>
+      </div>
       <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.5rem;">
         <label style="white-space:nowrap;color:var(--color-text-dark-secondary,#666);font-size:.85em;">Module:</label>
         <select class="grfc-module-select" style="flex:1 1 auto;min-width:0;" disabled>
           <option value="">Loading modules…</option>
         </select>
       </div>
+      <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.5rem;">
+        <label style="white-space:nowrap;color:var(--color-text-dark-secondary,#666);font-size:.85em;">Select Folder:</label>
+        <select class="grfc-tables-folder-select" style="flex:1 1 auto;min-width:0;">
+          <option value="">(Top level)</option>
+        </select>
+      </div>
       <p id="grfc-roll-tables-status" style="color:var(--color-text-dark-secondary,#666);margin:.25rem 0 .5rem;">Loading modules…</p>
       <ul class="grfc-roll-tables-list" style="list-style:none;margin:0;padding:0;flex:1 1 auto;overflow-y:auto"></ul>
-      <button type="button" class="grfc-import-roll-tables-btn" style="margin-top:.5rem;" disabled>Import Roll Tables</button>
+      <button type="button" class="grfc-import-roll-tables-btn" style="margin-top:.5rem;" disabled>Import Selected Tables</button>
     `;
   }
 
   _tablesActivate(tab, modulesPromise) {
+    this._tablesLoadCampaigns(tab);
     this._tablesLoadModules(tab, modulesPromise);
+    this._tablesPopulateFolders(tab);
+    tab.find('.grfc-tables-campaign-select').on('change', () => {
+      this._tablesRenderModuleOptions(tab);
+      this._tablesLoadList(tab);
+    });
     tab.find('.grfc-module-select').on('change', () => this._tablesLoadList(tab));
     tab.find('.grfc-import-roll-tables-btn').on('click', () => this._tablesDoImport(tab));
   }
 
+  async _tablesLoadCampaigns(tab) {
+    await populateCampaignSelect(tab.find('.grfc-tables-campaign-select'));
+  }
+
+  _tablesPopulateFolders(tab) {
+    populateTopLevelFolderSelect(tab.find('.grfc-tables-folder-select'), 'RollTable');
+  }
+
   async _tablesLoadModules(tab, modulesPromise) {
-    await populateModuleSelect(
-      tab.find('.grfc-module-select'),
-      tab.find('#grfc-roll-tables-status'),
-      'No adventure modules found in this Geektastic Realms world.',
-      'Choose a module to see its roll tables.',
-      modulesPromise
-    );
+    const status = tab.find('#grfc-roll-tables-status');
+    const moduleSelect = tab.find('.grfc-module-select');
+
+    const result = await modulesPromise;
+    if (!result.ok) {
+      status.text(`✘ ${result.error}`).css('color', '#c62828');
+      return;
+    }
+
+    const modules = result.body.modules || [];
+    tab.data('grfc-modules', modules);
+    if (modules.length === 0) {
+      moduleSelect.empty().append('<option value="">No modules in this world</option>');
+      status.text('No adventure modules found in this Geektastic Realms world.');
+      return;
+    }
+
+    this._tablesRenderModuleOptions(tab);
+    moduleSelect.prop('disabled', false);
+    status.text('Choose a module to see its roll tables.');
+  }
+
+  _tablesRenderModuleOptions(tab) {
+    renderModuleOptionsForCampaign(tab.find('.grfc-module-select'), tab.find('.grfc-tables-campaign-select'), tab.data('grfc-modules') || []);
   }
 
   async _tablesLoadList(tab) {
@@ -2904,7 +3215,7 @@ class ImportHubForm extends GrfcApplication {
       status.text('No roll tables available for this module.');
       return;
     }
-    status.text(`${rollTables.length} roll table${rollTables.length === 1 ? '' : 's'} available for this module.`);
+    status.text(`${rollTables.length} roll table${rollTables.length === 1 ? '' : 's'} available — uncheck any you don't want to import.`);
 
     const synced = syncedRollTablesByGrId();
     rollTables.forEach((table) => {
@@ -2917,7 +3228,8 @@ class ImportHubForm extends GrfcApplication {
       const scopeTag = table.scope === 'world' ? ' 🌍 World library' : '';
 
       const li = $(`
-        <li style="display:flex;align-items:center;gap:.5rem;padding:.35rem 0;border-bottom:1px solid #7773;">
+        <li data-gr-id="${table.id}" style="display:flex;align-items:center;gap:.5rem;padding:.35rem 0;border-bottom:1px solid #7773;">
+          <input type="checkbox" class="grfc-row-check" checked style="flex:0 0 auto;">
           <span style="flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
             <strong>${escapeHtml(table.title)}</strong>
             <span style="color:var(--color-text-dark-secondary,#666);font-size:.85em;"> — ${escapeHtml(table.die)}, ${table.rows.length} row${table.rows.length === 1 ? '' : 's'}${table.section_title ? ' — ' + escapeHtml(table.section_title) : ''}${escapeHtml(scopeTag)}</span>
@@ -2933,9 +3245,19 @@ class ImportHubForm extends GrfcApplication {
 
   async _tablesDoImport(tab) {
     const moduleId = tab.find('.grfc-module-select').val();
+    const folderId = tab.find('.grfc-tables-folder-select').val() || null;
     const status = tab.find('#grfc-roll-tables-status');
     const importBtn = tab.find('.grfc-import-roll-tables-btn');
     if (!moduleId) return;
+
+    const checkedIds = new Set(
+      tab.find('.grfc-roll-tables-list > li').filter((_, el) => $(el).find('.grfc-row-check').is(':checked'))
+        .map((_, el) => String($(el).data('gr-id'))).get()
+    );
+    if (checkedIds.size === 0) {
+      status.text('No tables selected — check at least one to import.').css('color', '#b26a00');
+      return;
+    }
 
     importBtn.prop('disabled', true);
     status.css('color', '');
@@ -2947,7 +3269,7 @@ class ImportHubForm extends GrfcApplication {
       return;
     }
 
-    const rollTables = result.body.roll_tables || [];
+    const rollTables = (result.body.roll_tables || []).filter((t) => checkedIds.has(String(t.id)));
     const synced = syncedRollTablesByGrId();
 
     let created = 0;
@@ -2958,12 +3280,12 @@ class ImportHubForm extends GrfcApplication {
     for (let i = 0; i < rollTables.length; i++) {
       const table = rollTables[i];
       const existing = synced.get(table.id) || null;
-      if (existing && existing.getFlag(MODULE_ID, 'grContentHash') === table.content_hash) {
+      if (existing && existing.getFlag(MODULE_ID, 'grContentHash') === table.content_hash && folderIdOf(existing) === folderId) {
         unchanged++;
         continue;
       }
       try {
-        const doc = await importRollTable(table, existing, (msg) => status.text(`(${i + 1}/${rollTables.length}) ${msg}`));
+        const doc = await importRollTable(table, existing, (msg) => status.text(`(${i + 1}/${rollTables.length}) ${msg}`), folderId);
         synced.set(table.id, doc);
         if (existing) updated++;
         else created++;
@@ -3033,26 +3355,11 @@ class ImportHubForm extends GrfcApplication {
 
   /** Populates the Campaign filter — purely additive; "All modules" (no campaign chosen) preserves the original unfiltered picker. */
   async _adventureLoadCampaigns(tab) {
-    const select = tab.find('.grfc-adventure-campaign-select');
-    const result = await fetchCampaignList();
-    if (!result.ok) {
-      // Non-fatal: the campaign filter is an optional convenience — leave it at
-      // "All modules" and let the module picker load normally either way.
-      console.warn('Geektastic Realms Foundry Connect: failed to load campaigns.', result.error);
-      return;
-    }
-    (result.body.campaigns || []).forEach((c) => select.append(`<option value="${c.id}">${escapeHtml(c.title)}</option>`));
+    await populateCampaignSelect(tab.find('.grfc-adventure-campaign-select'));
   }
 
-  /** Populates the target-folder dropdown from this world's *top-level* Journal folders only — first depth, not nested. */
   _adventurePopulateFolders(tab) {
-    const select = tab.find('.grfc-adventure-folder-select');
-    const folders = game.folders
-      .filter((f) => f.type === 'JournalEntry' && !f.folder)
-      .map((f) => ({ id: f.id, name: f.name }))
-      .sort((a, b) => a.name.localeCompare(b.name));
-
-    folders.forEach((f) => select.append(`<option value="${escapeHtml(f.id)}">${escapeHtml(f.name)}</option>`));
+    populateTopLevelFolderSelect(tab.find('.grfc-adventure-folder-select'), 'JournalEntry');
   }
 
   async _adventureLoadModules(tab, modulesPromise) {
@@ -3078,26 +3385,8 @@ class ImportHubForm extends GrfcApplication {
     status.text('Choose a module to import.');
   }
 
-  /** Rebuilds the Module <select>'s options from the cached module list, filtered to the selected Campaign (if any) — no extra GR round trip. */
   _adventureRenderModuleOptions(tab) {
-    const moduleSelect = tab.find('.grfc-module-select');
-    const campaignId = tab.find('.grfc-adventure-campaign-select').val();
-    const modules = tab.data('grfc-modules') || [];
-    const filtered = campaignId
-      ? modules.filter((m) => String(m.campaign_id ?? '') === String(campaignId))
-      : modules;
-
-    const previousValue = moduleSelect.val();
-    moduleSelect.empty();
-    if (filtered.length === 0) {
-      moduleSelect.append('<option value="">No modules in this campaign</option>');
-      return;
-    }
-    moduleSelect.append('<option value="">Choose a module…</option>');
-    filtered.forEach((m) => moduleSelect.append(`<option value="${m.id}">${escapeHtml(m.title)}</option>`));
-    if (filtered.some((m) => String(m.id) === String(previousValue))) {
-      moduleSelect.val(previousValue);
-    }
+    renderModuleOptionsForCampaign(tab.find('.grfc-module-select'), tab.find('.grfc-adventure-campaign-select'), tab.data('grfc-modules') || []);
   }
 
   async _adventureLoadPreview(tab) {
