@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.9.1] - 2026-08-07
+
+### Added
+- **Encounters tab: Campaign filter + Select Folder (Stage 22).** Matches the
+  Handouts/Tables tabs shipped in v2.9.0: a Campaign dropdown narrows the
+  Module list, and a Select Folder dropdown (this world's top-level Actor
+  folders) picks where the whole `Encounters` group folder lives —
+  `findOrCreateEncounterFolder()` gained a `parentFolderId` parameter and
+  now moves the `Encounters` folder to match if a different destination is
+  picked on a later deploy, same as this module's other Select Folder
+  pickers already do.
+
 ## [2.9.0] - 2026-08-07
 
 ### Added
@@ -810,7 +822,8 @@ verification" checklist item.
   response).
 - Verified against Foundry VTT v13. Not yet tested against v14.
 
-[Unreleased]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.9.0...HEAD
+[Unreleased]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.9.1...HEAD
+[2.9.1]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.9.0...v2.9.1
 [2.9.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.8.1...v2.9.0
 [2.8.1]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.8.0...v2.8.1
 [2.8.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.7.0...v2.8.0

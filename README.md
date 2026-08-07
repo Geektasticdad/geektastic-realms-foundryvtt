@@ -219,20 +219,26 @@ Actor.
 
 ## Deploying an Encounter
 
-In the import hub's **Encounters** tab. Pick a **Module** from the dropdown,
-and every encounter in it appears below — name, type, difficulty, which section it's
-in, and its full adversary roster (e.g. "3× Goblin, 1× Goblin Boss") right in the list,
-so you can see what you're about to deploy before committing to anything.
+In the import hub's **Encounters** tab, optionally narrow the **Module** dropdown to
+one campaign with the **Campaign** filter above it, pick a module, and optionally
+pick a **Select Folder** destination (this world's top-level Actor folders only —
+leave it on "(Top level)" for none; this is where the whole `Encounters` group
+folder below lives, not a per-encounter choice). Every encounter in the module
+appears below — name, type, difficulty, which section it's in, and its full
+adversary roster (e.g. "3× Goblin, 1× Goblin Boss") right in the list, so you can see
+what you're about to deploy before committing to anything.
 
 Before clicking Deploy, make sure the scene you actually want to run the fight on is
 the one currently open — that's where tokens get placed.
 
 Click **Deploy** next to the one you want. Every adversary's Actor is created (or
 updated in place, per [Re-syncing an Actor](#re-syncing-an-actor) above, if it already
-exists somewhere in this world) into an `Encounters/{encounter name}` folder — created
-on demand, and reused rather than duplicated if you deploy the same encounter again
-later. A failure on one creature doesn't stop the rest; you'll see how many succeeded
-and, if any failed, which ones and why.
+exists somewhere in this world) into an `Encounters/{encounter name}` folder —
+created on demand under whichever Select Folder destination you chose, and reused
+rather than duplicated if you deploy the same encounter again later (moved to match
+if you pick a different destination on a later deploy, too). A failure on one
+creature doesn't stop the rest; you'll see how many succeeded and, if any failed,
+which ones and why.
 
 Leave **"Place tokens on the current scene and create a linked Combat encounter"**
 checked (the default) and one token per creature is dropped onto whichever scene you
@@ -244,8 +250,8 @@ is open, token placement is skipped and the Combat falls back to an actor-only
 combatant per quantity instead — the Actors are still created either way, you'll just
 need to link those combatants to tokens yourself later.
 
-**Encounter summary actor (Stage 21).** Every deploy also creates (or updates) one
-extra Actor — a dnd5e "encounter" type, named after the encounter, in the same
+**Encounter summary actor.** Every deploy also creates (or updates) one extra Actor
+— a dnd5e "encounter" type, named after the encounter, in the same
 `Encounters/{encounter name}` folder — summarizing the whole fight on one sheet:
 - **Members** — every adversary you just deployed, with its quantity, so dnd5e's own
   Members tab can total XP/difficulty for you.

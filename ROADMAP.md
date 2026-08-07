@@ -474,11 +474,52 @@ existing response shape.
 
 ---
 
+## Stage 22 — Encounters tab: Campaign filter + Select Folder ✅ code shipped (v2.9.1; live verification still open)
+
+*Stage 21 brought the Handouts/Tables tabs up to the Adventure tab's picker; this
+closes the gap on the last of the four "pick a module" tabs. Deploy Encounter
+already has its own `Encounters/{name}` auto-folder structure (Stage 10) — Select
+Folder here picks where that whole group folder lives, not a per-encounter choice,
+since every deploy already organizes itself under one shared `Encounters` folder by
+design.*
+
+- [x] **Campaign filter + cached module list**, same `populateCampaignSelect()`/
+      `renderModuleOptionsForCampaign()` shared helpers Stage 21 already extracted
+      — `_encountersLoadModules()` now caches the raw list on the tab (via
+      `tab.data('grfc-modules', …)`) instead of calling `populateModuleSelect()`
+      directly, matching the Handouts/Tables tabs' own rewrite.
+- [x] **Select Folder** — this world's top-level *Actor* folders only
+      (`populateTopLevelFolderSelect(select, 'Actor')`), same first-depth-only
+      scope every other Select Folder picker in this module already uses.
+- [x] `findOrCreateEncounterFolder(encounterName, parentFolderId)` gained the new
+      parameter: the top-level `Encounters` folder is created under whichever
+      destination the DM chose (or stays at true top level if none), and is moved
+      to match if a different destination is picked on a later deploy — same
+      "moved to match on re-import/re-deploy" pattern this module's other Select
+      Folder pickers already follow.
+- [x] Re-confirmed (no code change needed) that the encounter summary actor
+      feature shipped in Stage 21 — Members from the deployed roster, Loot cloned
+      from each distinct adversary's own physical items, Description composed
+      from GR's Setup/Tactics/Rewards/DM Notes — is still wired in exactly as
+      before; this stage only changes *where* the Encounters folder (and
+      therefore the summary actor alongside it) gets filed.
+- [ ] **Live verification** (not yet done — no live Foundry v14 world available in
+      this pass): confirm a `Folder`'s `.update({ folder: … })` call actually
+      re-parents it under a top-level Actor folder as expected — this specific
+      "move an existing named folder to a new parent" path is new to this stage,
+      distinct from the create-fresh-under-a-parent path Stage 19's folder
+      helpers already established.
+
+**GR dependency:** none — purely Foundry-side, reusing Stage 21's shared picker
+helpers with no new GR endpoint.
+
+---
+
 ## Sequencing
 
 Stage 8 gates everything (verify before building). Stages 9 → 10 are strictly ordered
 (encounter deploy reuses re-sync). Stages 11 and 12 are independent of each other and
-of 10, but all three precede 13. Stages 14–21 float — schedule opportunistically
+of 10, but all three precede 13. Stages 14–22 float — schedule opportunistically
 alongside GR-side releases, matching the milestone table in the main repo's
 [ROADMAP.md](https://github.com/Geektasticdad/geektastic-realms/blob/main/ROADMAP.md).
 Stage 16's GR dependency (Roadmap 2.8) shipped in GR v2.0.0; only its own live
@@ -489,4 +530,6 @@ Stage 13 (it restructures Stage 13's output) and its own small GR-side addition
 touches only `rewriteCalloutBlocks()` (shared by Stages 11 and 13/19) plus a new
 stylesheet — independent of every other stage. Stage 21 depends on Stage 10 (deploy)
 and Stage 19 (the picker helpers it factors out and reuses) plus its own small
-GR-side addition (v2.17.5) — independent of Stage 20.
+GR-side addition (v2.17.5) — independent of Stage 20. Stage 22 depends on Stage 21
+(reuses its shared picker helpers directly) and Stage 10 (extends its folder
+helper) — no GR dependency of its own.

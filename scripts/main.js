@@ -1704,17 +1704,26 @@ function syncedActorsByEntryId() {
 }
 
 /**
- * Finds or creates the top-level "Encounters" Actor folder, and within it a subfolder
- * named after this encounter (Stage 10) — every adversary Actor a Deploy Encounter
- * run creates lands in `Encounters/{name}`, the same organization a DM would build by
- * hand. Existing folders are reused (by name + parent), so re-deploying the same
- * encounter later doesn't scatter duplicate folders.
+ * Finds or creates the "Encounters" Actor folder, and within it a subfolder named
+ * after this encounter (Stage 10) — every adversary Actor (and, per Stage 21, the
+ * encounter summary Actor) a Deploy Encounter run creates lands in
+ * `Encounters/{name}`, the same organization a DM would build by hand. Existing
+ * folders are reused (by name + parent), so re-deploying the same encounter later
+ * doesn't scatter duplicate folders.
+ * @param {?string} parentFolderId - where the "Encounters" folder itself lives
+ *   (Stage 22's Select Folder picker — one of this world's top-level Actor
+ *   folders); null for top level, the original (and still default) behavior.
+ *   Moved to match if the DM picks a different one on a later deploy, same as
+ *   this module's other Select Folder pickers already do.
  * @returns {Promise<string>} the encounter subfolder's id
  */
-async function findOrCreateEncounterFolder(encounterName) {
-  let parent = game.folders.find((f) => f.type === 'Actor' && !f.folder && f.name === 'Encounters');
+async function findOrCreateEncounterFolder(encounterName, parentFolderId) {
+  const grandparent = parentFolderId || null;
+  let parent = game.folders.find((f) => f.type === 'Actor' && f.name === 'Encounters' && folderIdOf(f) === grandparent);
   if (!parent) {
-    parent = await Folder.create({ name: 'Encounters', type: 'Actor', folder: null });
+    parent = game.folders.find((f) => f.type === 'Actor' && f.name === 'Encounters')
+      || await Folder.create({ name: 'Encounters', type: 'Actor', folder: grandparent });
+    if (folderIdOf(parent) !== grandparent) await parent.update({ folder: grandparent });
   }
   let child = game.folders.find((f) => f.type === 'Actor' && f.folder === parent.id && f.name === encounterName);
   if (!child) {
@@ -2713,14 +2722,27 @@ class ImportHubForm extends GrfcApplication {
     });
   }
 
-  // ── Encounters (Stage 10: deploy a whole encounter roster) ──────────────────
+  // ── Encounters (Stage 10: deploy a whole encounter roster; Stage 22:
+  //    Campaign filter, Select Folder) ────────────────────────────────────────
 
   _encountersTabHtml() {
     return `
       <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.5rem;">
+        <label style="white-space:nowrap;color:var(--color-text-dark-secondary,#666);font-size:.85em;">Campaign:</label>
+        <select class="grfc-encounters-campaign-select" style="flex:1 1 auto;min-width:0;">
+          <option value="">All modules</option>
+        </select>
+      </div>
+      <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.5rem;">
         <label style="white-space:nowrap;color:var(--color-text-dark-secondary,#666);font-size:.85em;">Module:</label>
         <select class="grfc-module-select" style="flex:1 1 auto;min-width:0;" disabled>
           <option value="">Loading modules…</option>
+        </select>
+      </div>
+      <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.5rem;">
+        <label style="white-space:nowrap;color:var(--color-text-dark-secondary,#666);font-size:.85em;">Select Folder:</label>
+        <select class="grfc-encounters-folder-select" style="flex:1 1 auto;min-width:0;">
+          <option value="">(Top level)</option>
         </select>
       </div>
       <label style="display:flex;align-items:center;gap:.4rem;margin-bottom:.5rem;font-size:.9em;">
@@ -2733,18 +2755,50 @@ class ImportHubForm extends GrfcApplication {
   }
 
   _encountersActivate(tab, modulesPromise) {
+    this._encountersLoadCampaigns(tab);
     this._encountersLoadModules(tab, modulesPromise);
+    this._encountersPopulateFolders(tab);
+    tab.find('.grfc-encounters-campaign-select').on('change', () => {
+      this._encountersRenderModuleOptions(tab);
+      this._encountersLoadList(tab);
+    });
     tab.find('.grfc-module-select').on('change', () => this._encountersLoadList(tab));
   }
 
+  async _encountersLoadCampaigns(tab) {
+    await populateCampaignSelect(tab.find('.grfc-encounters-campaign-select'));
+  }
+
+  /** Top-level Actor folders only — where the DM's Deploy runs will file their whole "Encounters" group folder. */
+  _encountersPopulateFolders(tab) {
+    populateTopLevelFolderSelect(tab.find('.grfc-encounters-folder-select'), 'Actor');
+  }
+
   async _encountersLoadModules(tab, modulesPromise) {
-    await populateModuleSelect(
-      tab.find('.grfc-module-select'),
-      tab.find('#grfc-encounter-status'),
-      'No adventure modules found in this Geektastic Realms world.',
-      'Choose a module to see its encounters.',
-      modulesPromise
-    );
+    const status = tab.find('#grfc-encounter-status');
+    const moduleSelect = tab.find('.grfc-module-select');
+
+    const result = await modulesPromise;
+    if (!result.ok) {
+      status.text(`✘ ${result.error}`).css('color', '#c62828');
+      return;
+    }
+
+    const modules = result.body.modules || [];
+    tab.data('grfc-modules', modules);
+    if (modules.length === 0) {
+      moduleSelect.empty().append('<option value="">No modules in this world</option>');
+      status.text('No adventure modules found in this Geektastic Realms world.');
+      return;
+    }
+
+    this._encountersRenderModuleOptions(tab);
+    moduleSelect.prop('disabled', false);
+    status.text('Choose a module to see its encounters.');
+  }
+
+  _encountersRenderModuleOptions(tab) {
+    renderModuleOptionsForCampaign(tab.find('.grfc-module-select'), tab.find('.grfc-encounters-campaign-select'), tab.data('grfc-modules') || []);
   }
 
   async _encountersLoadList(tab) {
@@ -2828,7 +2882,8 @@ class ImportHubForm extends GrfcApplication {
         const placeTokens = deployToScene;
         const createCombat = deployToScene;
         const preparedAdversaries = prepared.body.adversaries || [];
-        const folderId = await findOrCreateEncounterFolder(prepared.body.encounter?.name || encounter.name);
+        const parentFolderId = tab.find('.grfc-encounters-folder-select').val() || null;
+        const folderId = await findOrCreateEncounterFolder(prepared.body.encounter?.name || encounter.name, parentFolderId);
 
         const deployed = [];
         const failed = [];
