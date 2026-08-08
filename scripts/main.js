@@ -507,19 +507,35 @@ async function uploadIconToFoundry(mediaId, cache) {
 }
 
 /**
- * Finds this module's own Overview Journal Entry (Stage 11), if it's been
- * imported before — flagged with `grModuleId` rather than found by name, so
- * renaming the module or the journal afterward doesn't break re-import lookup.
- * Stage 19 gave every Act/Chapter its own Journal Entry too (see
- * `importSectionJournal()`), all of which also carry `grModuleId` — those are
- * additionally flagged with `grSectionId`, so excluding anything with that flag
- * here keeps this resolving to the same single "module journal" Stage 11
- * (Handouts) and the hid- ref-context lookup in `importAdventure()` have always
- * depended on, both unaware Stage 19 exists.
+ * Finds this module's own Overview Journal Entry (Stage 13's Import Adventure),
+ * if it's been imported before — flagged with `grModuleId` rather than found by
+ * name, so renaming the module or the journal afterward doesn't break re-import
+ * lookup. Stage 19 gave every Act/Chapter its own Journal Entry too (see
+ * `importSectionJournal()`, flagged `grSectionId`), and Stage 23 gave every
+ * handout its own Journal Entry (see `importHandouts()`, flagged `grHandoutId`)
+ * — both also carry `grModuleId`, so excluding anything with either flag here
+ * keeps this resolving to only the plain "module overview" journal.
  */
 function findModuleJournal(moduleId) {
   return game.journal.find((j) => j.getFlag(MODULE_ID, 'grModuleId') === moduleId
-    && j.getFlag(MODULE_ID, 'grSectionId') == null) || null;
+    && j.getFlag(MODULE_ID, 'grSectionId') == null
+    && j.getFlag(MODULE_ID, 'grHandoutId') == null) || null;
+}
+
+/**
+ * Every handout Journal Entry in this world previously imported (Stage 23),
+ * keyed by the GR handout id it was built from (`grHandoutId` flag) — same
+ * find-by-flag pattern `syncedActorsByEntryId()`/`syncedRollTablesByGrId()`
+ * established for Actors/RollTables. Handout ids are unique GR-wide, so this
+ * isn't scoped to one module.
+ */
+function syncedHandoutJournalsByGrId() {
+  const map = new Map();
+  for (const journal of game.journal) {
+    const grId = journal.getFlag(MODULE_ID, 'grHandoutId');
+    if (grId != null) map.set(grId, journal);
+  }
+  return map;
 }
 
 /**
@@ -534,7 +550,7 @@ function emptyRefContext() {
   return {
     encountersById: new Map(),
     handoutsById: new Map(),
-    handoutPagesByGrId: new Map(),
+    handoutJournalsByGrId: new Map(),
     rollTablesByGrId: new Map(),
     rollTableTitlesById: new Map(),
     actorsByEntryId: new Map(),
@@ -557,30 +573,27 @@ function handoutPageContent(handout, imgPath) {
 /**
  * Imports every handout in `handouts` (Stage 21: whichever ones the DM left
  * checked in the Handouts tab's list — previously always all of a module's
- * handouts) as pages of one Journal Entry (Stage 11) — created on first
- * import, found and reused (by `grModuleId` flag) on later ones. Each page is
- * flagged with `grHandoutId`/`grContentHash`; a page whose hash still matches
- * the handout's current `content_hash` is left untouched (not re-uploaded/
- * re-written), the same change-detection approach Stage 9/10 use for Actors
- * and encounters. A failure on one handout doesn't abort the rest.
- * `folderId` (Stage 21) is this world's chosen destination Journal folder —
- * moved to match on every re-import too, same as a renamed journal's name is.
- * @returns {Promise<{journal: JournalEntry, created: number, updated: number, unchanged: number, failed: {name: string, error: string}[]}>}
+ * handouts) as its own separate Journal Entry (Stage 23), named after the
+ * handout's title — created on first import, found and reused (by
+ * `grHandoutId` flag, via `synced`) and updated in place on later ones, the
+ * same find-by-flag/update-in-place approach Stage 9/10/12 use for Actors,
+ * encounters, and roll tables. (Before Stage 23, every handout in a module
+ * landed as one page inside a single shared Journal Entry named after the
+ * module — see CHANGELOG for why that changed.) Each entry holds exactly one
+ * page (also named after the handout) carrying the image (if any) above the
+ * rich-text body; a handout whose `content_hash` hasn't changed since is left
+ * completely untouched (not re-uploaded/re-written), only its name/folder are
+ * kept in sync if either was changed since. A failure on one handout doesn't
+ * abort the rest. `folderId` (Stage 21) is this world's chosen destination
+ * Journal folder — moved to match on every re-import too, same as a renamed
+ * entry's name is.
+ * @returns {Promise<{journals: JournalEntry[], created: number, updated: number, unchanged: number, failed: {name: string, error: string}[]}>}
  */
-async function importHandouts(moduleId, moduleTitle, handouts, onProgress, folderId) {
+async function importHandouts(moduleId, handouts, onProgress, folderId) {
   const iconCache = new Map();
+  const synced = syncedHandoutJournalsByGrId();
 
-  let journal = findModuleJournal(moduleId);
-  if (!journal) {
-    onProgress?.('Creating journal…');
-    journal = await JournalEntry.create({ name: moduleTitle, folder: folderId || null, flags: { [MODULE_ID]: { grModuleId: moduleId } } });
-  } else {
-    const updates = {};
-    if (journal.name !== moduleTitle) updates.name = moduleTitle;
-    if (folderIdOf(journal) !== (folderId || null)) updates.folder = folderId || null;
-    if (Object.keys(updates).length) await journal.update(updates);
-  }
-
+  const journals = [];
   let created = 0;
   let updated = 0;
   let unchanged = 0;
@@ -590,34 +603,54 @@ async function importHandouts(moduleId, moduleTitle, handouts, onProgress, folde
     const handout = handouts[i];
     onProgress?.(`Importing "${handout.title}"… (${i + 1}/${handouts.length})`);
     try {
-      const existingPage = journal.pages.find((p) => p.getFlag(MODULE_ID, 'grHandoutId') === handout.id);
-      if (existingPage && existingPage.getFlag(MODULE_ID, 'grContentHash') === handout.content_hash) {
+      const existing = synced.get(handout.id) || null;
+      const nameOk = existing && existing.name === handout.title;
+      const folderOk = existing && folderIdOf(existing) === (folderId || null);
+      if (existing && nameOk && folderOk && existing.getFlag(MODULE_ID, 'grContentHash') === handout.content_hash) {
         unchanged++;
+        journals.push(existing);
         continue;
       }
 
       const imgPath = handout.media_id ? await uploadIconToFoundry(handout.media_id, iconCache) : null;
       const content = handoutPageContent(handout, imgPath);
-      const flags = { [MODULE_ID]: { grHandoutId: handout.id, grContentHash: handout.content_hash } };
+      const flags = { [MODULE_ID]: { grModuleId: moduleId, grHandoutId: handout.id, grContentHash: handout.content_hash } };
 
-      if (existingPage) {
-        await existingPage.update({ name: handout.title, text: { content, format: CONST.JOURNAL_ENTRY_PAGE_FORMATS.HTML }, flags });
+      let journal = existing;
+      if (journal) {
+        const updates = { flags };
+        if (!nameOk) updates.name = handout.title;
+        if (!folderOk) updates.folder = folderId || null;
+        await journal.update(updates);
+
+        const page = journal.pages.contents[0];
+        if (page) {
+          await page.update({ name: handout.title, text: { content, format: CONST.JOURNAL_ENTRY_PAGE_FORMATS.HTML } });
+        } else {
+          await journal.createEmbeddedDocuments('JournalEntryPage', [{
+            name: handout.title,
+            type: 'text',
+            text: { content, format: CONST.JOURNAL_ENTRY_PAGE_FORMATS.HTML },
+          }]);
+        }
         updated++;
       } else {
+        journal = await JournalEntry.create({ name: handout.title, folder: folderId || null, flags });
         await journal.createEmbeddedDocuments('JournalEntryPage', [{
           name: handout.title,
           type: 'text',
           text: { content, format: CONST.JOURNAL_ENTRY_PAGE_FORMATS.HTML },
-          flags,
         }]);
         created++;
       }
+      synced.set(handout.id, journal);
+      journals.push(journal);
     } catch (err) {
       failed.push({ name: handout.title, error: err.message });
     }
   }
 
-  return { journal, created, updated, unchanged, failed };
+  return { journals, created, updated, unchanged, failed };
 }
 
 /**
@@ -743,9 +776,9 @@ function rewriteAdventureRefs(html, ctx) {
 
   html = html.replace(/<div\b[^>]*\bclass="[^"]*\bhid-(\d+)\b[^"]*"[^>]*>[\s\S]*?<\/div>/gi, (match, idStr) => {
     const id = Number(idStr);
-    const page = ctx.handoutPagesByGrId.get(id);
+    const journal = ctx.handoutJournalsByGrId.get(id);
     const title = ctx.handoutsById.get(id)?.title ?? 'Handout';
-    const label = page ? `@UUID[${page.uuid}]{${escapeHtml(title)}}` : escapeHtml(title);
+    const label = journal ? `@UUID[${journal.uuid}]{${escapeHtml(title)}}` : escapeHtml(title);
     return `<p>📄 ${label}</p>`;
   });
 
@@ -1007,13 +1040,14 @@ async function importSectionJournal(moduleId, folderId, section, ctx, includeDes
  * the Act's folder.
  *
  * Every encounter-ref/handout-ref/roll-table-ref chip is rewritten into a link
- * to whatever Stage 10–12 documents already exist, and each section's Related
- * Articles are appended as a linked-where-possible footer, same as Stage 13.
- * The Overview entry is the same one Stage 11 (Handouts) finds via
- * `findModuleJournal()` — a module's handouts and its narrative overview still
- * end up in one place. Deliberately does not create any Actors/RollTables/
- * handout pages itself — those are Stages 9–12's job; this stage only links to
- * what already exists.
+ * to whatever Stage 10/12/23 documents already exist, and each section's
+ * Related Articles are appended as a linked-where-possible footer, same as
+ * Stage 13. The Overview entry is found via the same `findModuleJournal()`
+ * used elsewhere — which (since Stage 23) resolves only to this plain
+ * overview journal, as every handout now lives in its own separate Journal
+ * Entry rather than as a page here. Deliberately does not create any Actors/
+ * RollTables/handout entries itself — those are Stages 9/10/12/23's job; this
+ * stage only links to what already exists.
  * @param {?string} parentFolderId - where the module's own folder is created/kept; null for top level.
  * @returns {Promise<{journal: JournalEntry, folder: Folder, created: number, updated: number, unchanged: number}>}
  */
@@ -1051,16 +1085,10 @@ async function importAdventure(moduleId, parentFolderId, onProgress) {
     if (Object.keys(updates).length) await journal.update(updates);
   }
 
-  const handoutPagesByGrId = new Map();
-  for (const page of journal.pages) {
-    const hid = page.getFlag(MODULE_ID, 'grHandoutId');
-    if (hid != null) handoutPagesByGrId.set(hid, page);
-  }
-
   const ctx = {
     encountersById,
     handoutsById,
-    handoutPagesByGrId,
+    handoutJournalsByGrId: syncedHandoutJournalsByGrId(),
     rollTablesByGrId: syncedRollTablesByGrId(),
     rollTableTitlesById,
     actorsByEntryId: syncedActorsByEntryId(),
@@ -2990,7 +3018,8 @@ class ImportHubForm extends GrfcApplication {
   }
 
   // ── Handouts (Stage 11: import a module's handouts as Journal pages; Stage
-  //    21: Campaign filter, Select Folder, per-handout checkboxes) ───────────
+  //    21: Campaign filter, Select Folder, per-handout checkboxes; Stage 23:
+  //    each handout its own separate Journal Entry) ─────────────────────────
 
   _handoutsTabHtml() {
     return `
@@ -3093,12 +3122,12 @@ class ImportHubForm extends GrfcApplication {
     }
     status.text(`${handouts.length} handout${handouts.length === 1 ? '' : 's'} available — uncheck any you don't want to import.`);
 
-    const journal = findModuleJournal(moduleId);
+    const synced = syncedHandoutJournalsByGrId();
     handouts.forEach((handout) => {
-      const existingPage = journal?.pages.find((p) => p.getFlag(MODULE_ID, 'grHandoutId') === handout.id) ?? null;
-      const isChanged = !!existingPage && existingPage.getFlag(MODULE_ID, 'grContentHash') !== handout.content_hash;
-      const statusLabel = !existingPage ? 'New' : isChanged ? '↻ Changed' : '✓ Up to date';
-      const statusColor = !existingPage ? 'var(--color-text-dark-secondary,#666)' : isChanged ? '#b26a00' : '#2e7d32';
+      const existing = synced.get(handout.id) || null;
+      const isChanged = !!existing && existing.getFlag(MODULE_ID, 'grContentHash') !== handout.content_hash;
+      const statusLabel = !existing ? 'New' : isChanged ? '↻ Changed' : '✓ Up to date';
+      const statusColor = !existing ? 'var(--color-text-dark-secondary,#666)' : isChanged ? '#b26a00' : '#2e7d32';
 
       const li = $(`
         <li data-gr-id="${handout.id}" style="display:flex;align-items:center;gap:.5rem;padding:.35rem 0;border-bottom:1px solid #7773;">
@@ -3145,9 +3174,8 @@ class ImportHubForm extends GrfcApplication {
     }
 
     const handouts = (result.body.handouts || []).filter((h) => checkedIds.has(String(h.id)));
-    const { journal, created, updated, unchanged, failed } = await importHandouts(
+    const { created, updated, unchanged, failed } = await importHandouts(
       moduleId,
-      moduleTitle,
       handouts,
       (msg) => status.text(msg),
       folderId
@@ -3167,7 +3195,6 @@ class ImportHubForm extends GrfcApplication {
       ui.notifications.warn(`Geektastic Realms Foundry Connect: imported handouts for "${moduleTitle}" (${summary}) with ${failed.length} failure(s).`);
     }
 
-    journal?.sheet?.render(true);
     importBtn.prop('disabled', false);
     await this._handoutsLoadList(tab);
   }

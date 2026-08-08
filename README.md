@@ -31,7 +31,7 @@ release pipeline (Stage 8) — see [RELEASING.md](RELEASING.md), updates a
 previously-created Actor in place when you re-import it instead of duplicating it
 (Stage 9) — see [Re-syncing an Actor](#re-syncing-an-actor), can deploy a whole
 encounter's adversary roster in one action (Stage 10), import a whole module's
-handouts as one Journal Entry (Stage 11), import a module's roll tables as native,
+handouts, each as its own Journal Entry (Stage 11/22), import a module's roll tables as native,
 rollable Foundry RollTable documents (Stage 12), import a whole module's narrative as
 one Journal Entry (Stage 13, the capstone), and (Stage 14) clone matched spells from a
 stat block's structured spell list onto its Actor with the right spellcasting
@@ -275,18 +275,18 @@ leave it on "(Top level)" for none). Every handout in the module appears below w
 checkbox (checked by default — uncheck any you don't want this run) and a status —
 **New**, **✓ Up to date**, or **↻ Changed**.
 
-Click **Import Selected Handouts** and every checked handout becomes a page in one
-Journal Entry named after the module, placed in whichever folder you chose — image
-(if it has one) above the rich-text body, one page per handout. Re-running this later
-finds that same Journal Entry again (even if you've renamed or moved it) and only
-touches pages whose handout actually changed since — an unchanged handout's page is
-left completely alone, not re-uploaded or rewritten. Leaving a handout unchecked just
-means this run doesn't touch its page — it isn't removed if it was already imported.
+Click **Import Selected Handouts** and every checked handout becomes its own
+Journal Entry, named after the handout's title, placed in whichever folder you
+chose — image (if it has one) above the rich-text body. Re-running this later finds
+that same Journal Entry again (even if you've renamed or moved it) and only rebuilds
+one whose handout actually changed since — an unchanged handout's entry is left
+completely alone, not re-uploaded or rewritten. Leaving a handout unchecked just
+means this run doesn't touch its entry — it isn't removed if it was already imported.
 A failure on one handout doesn't stop the rest; you'll see how many were created,
 updated, or already current, and if any failed, which ones and why.
 
-The journal opens automatically when the import finishes. From there, use Foundry's
-native **Show to Players** on any page at the table — that's the whole point.
+From there, use Foundry's native **Show to Players** on any handout's entry at the
+table — that's the whole point.
 
 ## Importing Roll Tables
 
@@ -332,19 +332,19 @@ has. Click **Import Adventure**.
 
 Rather than one flat Journal Entry, this builds a real folder tree matching how
 you'd organize it by hand: a top-level Journal folder named after the module
-(wherever Select Folder pointed), containing an **Overview** entry at its root — the
-same journal Import Handouts uses for this module, so a module's narrative and its
-handouts end up together — one **folder + Journal Entry per Act** (that Act's own
-content only), and inside each Act's folder, one **folder + Journal Entry per
-Chapter**, holding that Chapter's own content plus every Scene beneath it as
-additional pages of the same entry. An Appendix (or anything else outside the
-Act/Chapter/Scene shape) lands as a plain entry at the module folder's root.
+(wherever Select Folder pointed), containing an **Overview** entry at its root, one
+**folder + Journal Entry per Act** (that Act's own content only), and inside each
+Act's folder, one **folder + Journal Entry per Chapter**, holding that Chapter's own
+content plus every Scene beneath it as additional pages of the same entry. An
+Appendix (or anything else outside the Act/Chapter/Scene shape) lands as a plain
+entry at the module folder's root. A module's handouts are their own separate
+Journal Entries (see **Importing Handouts** above) rather than part of this tree.
 
 Anywhere you used **⚔ Insert Encounter**, **📄 Insert Handout**, or **🎲 Insert Roll
 Table** in Geektastic Realms, that reference becomes a real Foundry link — to the
 Actors an encounter's adversaries were deployed as (if you've run Deploy Encounter
-for it), the handout's page (if you've run Import Handouts), or the table (if
-you've run Import Roll Tables). Anything you haven't imported yet still shows up as
+for it), the handout's own Journal Entry (if you've run Import Handouts), or the
+table (if you've run Import Roll Tables). Anything you haven't imported yet still shows up as
 plain text — a name, not a broken link — so nothing looks broken, it just isn't
 clickable yet. Any lore entries linked to a section (its Related Articles) show up
 the same way: linked if that entry has an Actor in this world, plain text otherwise.

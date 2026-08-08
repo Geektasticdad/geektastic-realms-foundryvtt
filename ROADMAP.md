@@ -542,11 +542,51 @@ helpers with no new GR endpoint.
 
 ---
 
+## Stage 23 — Handouts: one Journal Entry per handout ✅ code shipped (v2.10.0; live verification still open)
+
+*Since Stage 11, every handout in a module landed as a page inside one shared
+Journal Entry named after the module — fine for reading through the whole set at
+once, but awkward at the table: showing one handout to players via Foundry's
+native "Show to Players" always meant hunting for the right page inside a bigger
+journal first. This gives each handout its own entry, named after the handout
+itself, so it shows up on its own in the sidebar and opens straight to its
+content.*
+
+- [x] **`importHandouts()` rewritten**: each checked handout is now its own
+      `JournalEntry` (named after `handout.title`, one page inside carrying the
+      image and rich-text body), found and reused on re-import by the
+      `grHandoutId` flag — same find-by-flag/update-in-place approach Stage
+      9/10/12 already use for Actors, encounters, and roll tables — rather than
+      one shared per-module journal with a page per handout.
+- [x] **`findModuleJournal()`** (the Stage 13 Overview entry lookup) now also
+      excludes anything flagged `grHandoutId`, alongside the existing
+      `grSectionId` exclusion, so it keeps resolving to only the plain module
+      overview journal now that handouts live elsewhere.
+- [x] **New `syncedHandoutJournalsByGrId()`** — same find-by-flag pattern as
+      `syncedActorsByEntryId()`/`syncedRollTablesByGrId()` — replaces the old
+      "scan the shared journal's pages for a `grHandoutId` flag" lookup
+      everywhere it was used: the Handouts tab's New/Changed/Up to date status
+      list, and `importAdventure()`'s hid- ref-chip rewriting (now links
+      straight to the handout's own Journal Entry instead of one of its pages).
+- [x] Docs (README's Importing Handouts/Importing an Adventure sections)
+      updated to describe the new per-handout entries.
+- [ ] **Live verification** (not yet done — no live Foundry world available in
+      this pass): confirm re-importing an already-imported handout finds and
+      updates the same entry rather than creating a duplicate, confirm a
+      hid- ref chip elsewhere in an imported Adventure links correctly to the
+      handout's new standalone entry, and confirm "Show to Players" works
+      immediately from the handout's own sidebar entry.
+
+**GR dependency:** none — purely Foundry-side, no new GR endpoint or payload
+shape needed.
+
+---
+
 ## Sequencing
 
 Stage 8 gates everything (verify before building). Stages 9 → 10 are strictly ordered
 (encounter deploy reuses re-sync). Stages 11 and 12 are independent of each other and
-of 10, but all three precede 13. Stages 14–22 float — schedule opportunistically
+of 10, but all three precede 13. Stages 14–23 float — schedule opportunistically
 alongside GR-side releases, matching the milestone table in the main repo's
 [ROADMAP.md](https://github.com/Geektasticdad/geektastic-realms/blob/main/ROADMAP.md).
 Stage 16's GR dependency (Roadmap 2.8) shipped in GR v2.0.0; only its own live
@@ -559,4 +599,6 @@ stylesheet — independent of every other stage. Stage 21 depends on Stage 10 (d
 and Stage 19 (the picker helpers it factors out and reuses) plus its own small
 GR-side addition (v2.17.5) — independent of Stage 20. Stage 22 depends on Stage 21
 (reuses its shared picker helpers directly) and Stage 10 (extends its folder
-helper) — no GR dependency of its own.
+helper) — no GR dependency of its own. Stage 23 depends only on Stage 11 (rebuilds
+its handout-import path) and touches Stage 13's ref-rewriting/Overview-lookup code
+that already depended on Stage 11 — no GR dependency of its own.

@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.10.0] - 2026-08-08
+
+### Changed
+- **Every handout now imports as its own separate Journal Entry, named after
+  the handout's title** (Stage 23), instead of landing as a page inside one
+  shared Journal Entry named after the module. Showing a specific handout to
+  players via Foundry's native "Show to Players" no longer means hunting for
+  the right page inside a bigger journal — each handout has its own entry in
+  the sidebar. Re-running Import Handouts still finds and updates the same
+  entry per handout (by its `grHandoutId` flag) rather than creating
+  duplicates, and an unchanged handout is still left completely untouched.
+  Anywhere a handout was referenced elsewhere (a hid- ref chip in an Adventure
+  import) now links straight to the handout's own entry instead of one of its
+  pages. See [README.md](README.md#importing-handouts) and
+  [ROADMAP.md](ROADMAP.md) Stage 23 for details.
+
 ## [2.9.3] - 2026-08-07
 
 ### Changed
