@@ -23,11 +23,12 @@
  * convention GR's own MCP server documents for its own tools (see
  * `Docs/09-GR-Rich-Text-Formatting.md` in the Geektastic MCP Server repo).
  *
- * DM Secret is the one exception — it imports as Foundry's own native
+ * DM Secret and DM Note are the exceptions — GR hides both from players (DM Note
+ * since GR v2.30.0) — so they import as Foundry's own native
  * `<section class="secret">` block (GM/Owner-only visible, with Foundry's
  * built-in reveal-to-players toggle) instead of a labeled blockquote, since
  * that's a truer match for GR's "hidden until the DM chooses" intent than a
- * plainly-labeled box everyone can read. The `.dm-secret` class below layers
+ * plainly-labeled box everyone can read. The `.dm-note`/`.dm-secret` classes below layer
  * GR's own accent color on top of Foundry's own secret-block chrome; it does
  * not replace it.
  */

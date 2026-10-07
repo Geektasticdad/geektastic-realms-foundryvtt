@@ -558,15 +558,30 @@ function emptyRefContext() {
 }
 
 /**
+ * Version of this module's own HTML rewriting (ref chips, callouts, entry links).
+ * Folded into the content hash stored on imported Journal pages and handouts, so a
+ * change to the rewriting re-renders previously imported pages once on the next
+ * import even when GR's own content_hash hasn't changed. Bump when the output of
+ * rewriteAdventureRefs()/rewriteCalloutBlocks() changes.
+ */
+const RENDER_VERSION = 2;
+
+/** GR's content_hash plus RENDER_VERSION — what import compares and stores. */
+function renderedHash(contentHash) {
+  return contentHash ? `${contentHash}:r${RENDER_VERSION}` : contentHash;
+}
+
+/**
  * One handout's page content: an uploaded image (if any) above the rich-text
  * body, which is run through the same ref-chip and callout-block rewriting
  * Stage 13's adventure export uses (rewriteAdventureRefs/rewriteCalloutBlocks,
  * defined below) — previously this passed handout.body_html straight through
  * untouched, silently leaving any embedded ref chip or callout div unresolved.
  */
-function handoutPageContent(handout, imgPath) {
+function handoutPageContent(handout, imgPath, actorsByEntryId) {
   const imageHtml = imgPath ? `<p><img src="${imgPath}" style="max-width:400px;"></p>` : '';
-  const body = rewriteCalloutBlocks(rewriteAdventureRefs(handout.body_html || '', emptyRefContext()));
+  const ctx = { ...emptyRefContext(), actorsByEntryId: actorsByEntryId || new Map() };
+  const body = rewriteCalloutBlocks(rewriteAdventureRefs(handout.body_html || '', ctx));
   return imageHtml + body;
 }
 
@@ -592,6 +607,7 @@ function handoutPageContent(handout, imgPath) {
 async function importHandouts(moduleId, handouts, onProgress, folderId) {
   const iconCache = new Map();
   const synced = syncedHandoutJournalsByGrId();
+  const actorsByEntryId = syncedActorsByEntryId();
 
   const journals = [];
   let created = 0;
@@ -606,15 +622,15 @@ async function importHandouts(moduleId, handouts, onProgress, folderId) {
       const existing = synced.get(handout.id) || null;
       const nameOk = existing && existing.name === handout.title;
       const folderOk = existing && folderIdOf(existing) === (folderId || null);
-      if (existing && nameOk && folderOk && existing.getFlag(MODULE_ID, 'grContentHash') === handout.content_hash) {
+      if (existing && nameOk && folderOk && existing.getFlag(MODULE_ID, 'grContentHash') === renderedHash(handout.content_hash)) {
         unchanged++;
         journals.push(existing);
         continue;
       }
 
       const imgPath = handout.media_id ? await uploadIconToFoundry(handout.media_id, iconCache) : null;
-      const content = handoutPageContent(handout, imgPath);
-      const flags = { [MODULE_ID]: { grModuleId: moduleId, grHandoutId: handout.id, grContentHash: handout.content_hash } };
+      const content = handoutPageContent(handout, imgPath, actorsByEntryId);
+      const flags = { [MODULE_ID]: { grModuleId: moduleId, grHandoutId: handout.id, grContentHash: renderedHash(handout.content_hash) } };
 
       let journal = existing;
       if (journal) {
@@ -803,7 +819,36 @@ function rewriteAdventureRefs(html, ctx) {
     return `<p>${icon} ${title}</p>`;
   });
 
-  return html;
+  return rewriteEntryLinks(html, ctx);
+}
+
+/**
+ * GR links to its own lore entries — `@`-mentions (`<a class="entry-link"
+ * href="/settings/{sid}/e/{id}">`), article links made with the editor's link
+ * button, and the older `/settings/{sid}/categories/{c}/entries/{id}` form — are
+ * relative URLs into GR's DM site, so as-is they'd point at the Foundry server.
+ * Each becomes an `@UUID` link to the Actor built from that entry (Stage 9) when
+ * one exists, otherwise its plain label. Any other root-relative link is made
+ * absolute to the configured GR server so it still opens somewhere sensible.
+ */
+function rewriteEntryLinks(html, ctx) {
+  if (!html || !/<a\b/i.test(html)) return html;
+  const { serverUrl } = getServerConfig();
+  return html.replace(/<a\b([^>]*)>([\s\S]*?)<\/a>/gi, (match, attrs, inner) => {
+    const hrefMatch = attrs.match(/\bhref\s*=\s*(?:"([^"]*)"|'([^']*)')/i);
+    const href = hrefMatch ? (hrefMatch[1] ?? hrefMatch[2]) : '';
+    const idMatch = href.match(/\/settings\/\d+\/(?:e|categories\/\d+\/entries)\/(\d+)(?:[?#]|$)/)
+      || attrs.match(/\bdata-entry-id\s*=\s*["']?(\d+)/i);
+    if (idMatch) {
+      const label = inner.replace(/<[^>]*>/g, '').trim();
+      const actor = ctx.actorsByEntryId?.get(Number(idMatch[1]));
+      return actor ? `@UUID[${actor.uuid}]{${label.replace(/[{}]/g, '')}}` : label;
+    }
+    if (serverUrl && href.startsWith('/') && !href.startsWith('//')) {
+      return match.replace(href, `${serverUrl}${href}`);
+    }
+    return match;
+  });
 }
 
 /**
@@ -822,7 +867,7 @@ function rewriteAdventureRefs(html, ctx) {
  * importantly, DM Secret vs. Read Aloud — very different audiences) the first
  * time a DM opens an imported page in Foundry's own editor to touch it up.
  *
- * Five of the six rewrite into a `<blockquote class="{cssClass}">` — a node
+ * Four of the six rewrite into a `<blockquote class="{cssClass}">` — a node
  * ProseMirror's schema does define, so it always survives editing — carrying
  * both a bold label (readable even if the class itself doesn't survive) and
  * GR's own class name, which `styles/gr-callouts.css` (Stage 20) styles to
@@ -834,7 +879,8 @@ function rewriteAdventureRefs(html, ctx) {
  * as well, but the bold-label fallback is unaffected either way. Not yet
  * verified against a live instance (see ROADMAP.md).
  *
- * DM Secret gets different treatment: instead of a labeled blockquote everyone
+ * DM Secret and DM Note get different treatment (GR v2.30.0 made DM Note hidden
+ * from players too): instead of a labeled blockquote everyone
  * with access to the page can read equally, it becomes Foundry's own native
  * `<section class="secret">` block — GM/Owner-only visible by default, with
  * Foundry's built-in reveal-to-players toggle — a closer match to GR's "hidden
@@ -854,10 +900,15 @@ function rewriteAdventureRefs(html, ctx) {
  */
 const CALLOUT_LABELS = {
   'read-aloud': 'Read Aloud',
-  'dm-note': 'DM Note',
   'encounter-block': 'Encounter',
   'treasure-block': 'Treasure',
   'boxed-text': 'Boxed Text',
+};
+
+/** GR hides these from players (DM Note since GR v2.30.0), so they import as Foundry secrets. */
+const SECRET_CALLOUT_LABELS = {
+  'dm-note': 'DM Note',
+  'dm-secret': 'DM Secret',
 };
 
 function rewriteCalloutBlocks(html) {
@@ -881,17 +932,19 @@ function rewriteCalloutBlocks(html) {
     });
   }
 
-  root.querySelectorAll('div.dm-secret').forEach((el) => {
-    const section = parsed.createElement('section');
-    section.setAttribute('class', 'secret dm-secret');
-    const labelPara = parsed.createElement('p');
-    const strong = parsed.createElement('strong');
-    strong.textContent = 'DM Secret';
-    labelPara.appendChild(strong);
-    section.appendChild(labelPara);
-    while (el.firstChild) section.appendChild(el.firstChild);
-    el.replaceWith(section);
-  });
+  for (const [cssClass, label] of Object.entries(SECRET_CALLOUT_LABELS)) {
+    root.querySelectorAll(`div.${cssClass}`).forEach((el) => {
+      const section = parsed.createElement('section');
+      section.setAttribute('class', `secret ${cssClass}`);
+      const labelPara = parsed.createElement('p');
+      const strong = parsed.createElement('strong');
+      strong.textContent = label;
+      labelPara.appendChild(strong);
+      section.appendChild(labelPara);
+      while (el.firstChild) section.appendChild(el.firstChild);
+      el.replaceWith(section);
+    });
+  }
 
   return root.innerHTML;
 }
@@ -926,7 +979,8 @@ function relatedEntriesFooter(relatedEntries, actorsByEntryId) {
  * `name`/`title.level`/`text` when `contentHash` actually changed.
  * @returns {Promise<{changed: boolean, isNew: boolean}>}
  */
-async function importAdventurePage(journal, flagKey, flagValue, { name, level, content, contentHash, sortOrder }) {
+async function importAdventurePage(journal, flagKey, flagValue, { name, level, content, contentHash: grHash, sortOrder }) {
+  const contentHash = renderedHash(grHash);
   const existingPage = journal.pages.find((p) => p.getFlag(MODULE_ID, flagKey) === flagValue);
   const isNew = !existingPage;
   const upToDate = !isNew && existingPage.getFlag(MODULE_ID, 'grContentHash') === contentHash;
@@ -1781,11 +1835,11 @@ function findEncounterActor(encounterId) {
  * callout-block/ref-chip rewrite every other GR rich-text field gets on its
  * way into Foundry, since a DM could plausibly use GR's block editor's
  * conventions in any of these four fields too. Uses `emptyRefContext()` (no
- * cross-module ref resolution) rather than building a full context — same
- * scope Import Handouts already uses for its own body text.
+ * cross-module ref resolution) plus this world's synced Actors, so lore-entry
+ * links resolve — same scope Import Handouts uses for its own body text.
  */
 function encounterDescriptionHtml(encounter) {
-  const ctx = emptyRefContext();
+  const ctx = { ...emptyRefContext(), actorsByEntryId: syncedActorsByEntryId() };
   const sections = [
     ['Setup', encounter.setup],
     ['Tactics', encounter.tactics],
@@ -3125,7 +3179,7 @@ class ImportHubForm extends GrfcApplication {
     const synced = syncedHandoutJournalsByGrId();
     handouts.forEach((handout) => {
       const existing = synced.get(handout.id) || null;
-      const isChanged = !!existing && existing.getFlag(MODULE_ID, 'grContentHash') !== handout.content_hash;
+      const isChanged = !!existing && existing.getFlag(MODULE_ID, 'grContentHash') !== renderedHash(handout.content_hash);
       const statusLabel = !existing ? 'New' : isChanged ? '↻ Changed' : '✓ Up to date';
       const statusColor = !existing ? 'var(--color-text-dark-secondary,#666)' : isChanged ? '#b26a00' : '#2e7d32';
 

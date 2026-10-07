@@ -9,6 +9,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.11.0] - 2026-10-07
+
+Catches up with Geektastic Realms v2.30–v3.0.
+
+### Changed
+- **DM Notes import as Foundry secrets.** GR has hidden DM Note blocks from
+  players since v2.30.0 (like DM Secret), but this module still imported them
+  as a labeled box anyone with page access could read. They now import as
+  Foundry's native Secret block (GM/Owner only, with the reveal toggle), like
+  DM Secret.
+- **Previously imported pages re-render once.** Adventure pages and handouts
+  now remember which version of this module's formatting built them, so the
+  next Import Adventure / Import Handouts rewrites them with the fixes in this
+  release even if nothing changed in GR. The Handouts tab shows them as
+  changed until then.
+
+### Fixed
+- **Links to lore entries no longer break.** GR's `@`-mentions and article
+  links are relative links into GR (`/settings/{id}/e/{entryId}`), so in
+  Foundry they pointed at the Foundry server. In adventures, handouts and
+  encounter descriptions they now link to the entry's Actor when you've
+  imported it, or show as plain text otherwise. Any other link into GR is made
+  absolute to your configured server URL.
+- README's development notes described the old v1 `FormApplication` base; it
+  now describes `ApplicationV2`.
+
+---
+
 ## [2.10.0] - 2026-08-08
 
 ### Changed
@@ -879,7 +907,9 @@ verification" checklist item.
   response).
 - Verified against Foundry VTT v13. Not yet tested against v14.
 
-[Unreleased]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.9.3...HEAD
+[Unreleased]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.11.0...HEAD
+[2.11.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.10.0...v2.11.0
+[2.10.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.9.3...v2.10.0
 [2.9.3]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.9.2...v2.9.3
 [2.9.2]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.9.1...v2.9.2
 [2.9.1]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.9.0...v2.9.1

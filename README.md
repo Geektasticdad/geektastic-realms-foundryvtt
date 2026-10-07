@@ -347,7 +347,9 @@ for it), the handout's own Journal Entry (if you've run Import Handouts), or the
 table (if you've run Import Roll Tables). Anything you haven't imported yet still shows up as
 plain text — a name, not a broken link — so nothing looks broken, it just isn't
 clickable yet. Any lore entries linked to a section (its Related Articles) show up
-the same way: linked if that entry has an Actor in this world, plain text otherwise.
+the same way: linked if that entry has an Actor in this world, plain text otherwise —
+and so do lore-entry links inside the text itself (GR's `@`-mentions and article
+links), which would otherwise point at your Foundry server instead of GR.
 GR's six styled callout blocks (Read Aloud, DM Note, Encounter, Treasure, Boxed
 Text, DM Secret) also carry over — see **Callout block styling** below.
 
@@ -368,8 +370,8 @@ anything imported through Import Handouts or Import Adventure that used one of
 these looks the same in Foundry as it does on GR's own site: a colored left border
 and tinted background, plus a bold label identifying the block type.
 
-DM Secret is the one exception — it imports as Foundry's own native **Secret**
-block (Journal Entries article, "Text Formatting") instead of a colored box:
+DM Secret and DM Note are the exceptions — GR hides both from players, so they
+import as Foundry's own native **Secret** block (Journal Entries article, "Text Formatting") instead of a colored box:
 GM/Owner-only visible by default, with Foundry's built-in reveal-to-players toggle,
 which is a closer match to "hidden until the DM chooses to reveal it" than a
 plainly-labeled box everyone with page access could read equally.
@@ -380,7 +382,7 @@ mode (the `</>` button in ProseMirror's own toolbar), and wrap a block in one of
 
 ```html
 <blockquote class="read-aloud">Text to read aloud to players.</blockquote>
-<blockquote class="dm-note">A private reminder for the DM only.</blockquote>
+<section class="secret dm-note">A private reminder for the DM only.</section>
 <blockquote class="encounter-block">Encounter setup notes.</blockquote>
 <blockquote class="treasure-block">Loot and rewards.</blockquote>
 <blockquote class="boxed-text">Neutral bordered box.</blockquote>
@@ -396,17 +398,14 @@ same markup means the same thing on both sides.
 
 - Plain vanilla JavaScript, native ES modules — no bundler/build step. Edit
   `scripts/main.js` directly and reload Foundry to test changes.
-- Built against the classic `FormApplication`/`Application` v1 API rather than v13's
-  newer `ApplicationV2` — v1 remains supported via Foundry's compatibility layer and is
-  the better-documented, less version-fragile choice for a module this small. Every
-  dialog (`TestConnectionForm`, `CompendiumSyncForm`, and the tabbed `ImportHubForm`)
-  extends a `FormApplicationBase` constant (`scripts/main.js`) that resolves to
-  `foundry.appv1.api.FormApplication` if present, falling back to the bare
-  `FormApplication` global otherwise — covers both v13 variants without needing to know
-  ahead of time which one a given build exposes. `ImportHubForm`'s tab switching is a
-  small self-contained click handler, not `Application`'s built-in `options.tabs`
-  binding — that was tried first but didn't actually switch panels on click, so it was
-  replaced rather than chased down.
+- Built on Foundry's `ApplicationV2` (since v2.0.0). Every dialog
+  (`TestConnectionForm`, `ArchiveChatForm`, `CompendiumSyncForm` and the tabbed
+  `ImportHubForm`) extends `GrfcApplication` (`scripts/main.js`), which drops the HTML
+  each one builds as a template literal into the window — no Handlebars templates, no
+  build step. `ImportHubForm`'s tab switching is a small self-contained click handler.
+- Imported Journal pages and handouts store GR's `content_hash` plus this module's
+  `RENDER_VERSION`; bump that constant whenever the HTML rewriting changes so existing
+  imports re-render once on the next import.
 - The `syncPacks` world setting (your saved pack selection) is intentionally not in the
   visible Module Settings list (`config: false`) — it's managed entirely through the
   Sync Compendiums dialog's checkboxes.
