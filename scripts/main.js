@@ -24,7 +24,7 @@
  * consolidated Import Hub) were ported to ApplicationV2's render/parts/action
  * model; see GrfcApplication below and CHANGELOG.md for what changed. Not yet
  * live-tested against a real Foundry v14 instance (see ROADMAP.md) — the port
- * preserves every dialog's HTML-building and jQuery event-wiring code unchanged,
+ * preserves every dialog's HTML-building and event-wiring code unchanged,
  * only the outer class-level lifecycle hooks (options/render/event-binding) were
  * adapted to the new API, but that still needs a real click-through before this
  * is trusted in an actual game.
@@ -45,10 +45,10 @@
 const MODULE_ID = 'geektastic-realms-foundry-connect';
 
 /**
- * Shared ApplicationV2 base for this module's three dialogs. None of them use
+ * Shared ApplicationV2 base for this module's four dialogs. None of them use
  * Handlebars templates — there's no templates/ directory and no build step, so
  * each builds its own markup as a plain JS template literal (same approach they
- * used under the old v1 API) and wires jQuery event handlers onto it in
+ * used under the old v1 API) and wires event handlers onto it (via `dom()`) in
  * `_onRender()`. This base supplies the one piece of glue ApplicationV2 needs for
  * that instead of Handlebars: taking whatever HTML string a subclass's
  * `_renderHTML()` returns and dropping it into the window's content element.
@@ -67,6 +67,170 @@ function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, (ch) => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
   }[ch]));
+}
+
+/**
+ * Foundry v13 moved FilePicker and fromUuid into namespaces and deprecated the old
+ * globals (slated for removal); prefer the namespaced versions, falling back to the
+ * globals on builds that don't have them.
+ */
+function filePicker() {
+  return foundry.applications?.apps?.FilePicker?.implementation ?? globalThis.FilePicker;
+}
+
+function uuidToDocument(uuid) {
+  return (foundry.utils?.fromUuid ?? globalThis.fromUuid)(uuid);
+}
+
+/**
+ * Tiny DOM helper standing in for jQuery (v2.12.0). Foundry v13+ no longer uses
+ * jQuery itself and passes plain HTMLElements to ApplicationV2 render hooks; keeping
+ * a hard dependency on the global `$` meant this module would break the day Foundry
+ * stops shipping it. `dom()` wraps the same small subset of jQuery's API this file
+ * always used — find/on/text/css/val/prop/attr/data/append/… — over native DOM
+ * calls, so the dialog code reads the same as before with none of jQuery's global
+ * state. Accepts an element, a selector-free HTML string (`'<li>…</li>'`), an
+ * array/NodeList, another `dom()` wrapper, a jQuery object (older render hooks), or
+ * nothing (empty). Selectors are plain CSS — jQuery-only pseudo-classes such as
+ * `:selected` don't work (use `:checked`).
+ */
+const domData = new WeakMap();
+const domHiddenDisplay = new WeakMap();
+
+function dom(input) {
+  return new DomList(input);
+}
+
+class DomList {
+  constructor(input) {
+    if (input instanceof DomList) this.els = [...input.els];
+    else if (input == null) this.els = [];
+    else if (typeof input === 'string') {
+      const template = document.createElement('template');
+      template.innerHTML = input.trim();
+      this.els = [...template.content.children];
+    } else if (input.nodeType) this.els = [input];
+    else if (typeof input.length === 'number') this.els = Array.from(input);
+    else this.els = [input];
+  }
+
+  get length() { return this.els.length; }
+  get(index) { return index === undefined ? [...this.els] : this.els[index]; }
+  first() { return dom(this.els.slice(0, 1)); }
+  each(fn) { this.els.forEach((el, i) => fn(i, el)); return this; }
+  map(fn) { return dom(this.els.map((el, i) => fn(i, el))); }
+
+  find(selector) {
+    const found = new Set();
+    for (const el of this.els) el.querySelectorAll?.(selector).forEach((m) => found.add(m));
+    return dom([...found]);
+  }
+
+  filter(test) {
+    return dom(typeof test === 'function'
+      ? this.els.filter((el, i) => test(i, el))
+      : this.els.filter((el) => el.matches?.(test)));
+  }
+
+  is(selector) { return this.els.some((el) => el.matches?.(selector)); }
+
+  /** on(event, handler) binds directly; on(event, selector, handler) delegates. */
+  on(event, selectorOrHandler, maybeHandler) {
+    for (const el of this.els) {
+      if (typeof selectorOrHandler === 'function') {
+        el.addEventListener(event, selectorOrHandler);
+      } else {
+        el.addEventListener(event, (e) => {
+          const target = e.target instanceof Element ? e.target.closest(selectorOrHandler) : null;
+          if (target && (el === document || el.contains(target))) maybeHandler.call(target, e);
+        });
+      }
+    }
+    return this;
+  }
+
+  text(value) {
+    if (value === undefined) return this.els.map((el) => el.textContent).join('');
+    this.els.forEach((el) => { el.textContent = String(value); });
+    return this;
+  }
+
+  html(value) {
+    if (value === undefined) return this.els[0]?.innerHTML ?? '';
+    this.els.forEach((el) => { el.innerHTML = String(value); });
+    return this;
+  }
+
+  css(prop, value) {
+    this.els.forEach((el) => { el.style.setProperty(prop, value ?? ''); });
+    return this;
+  }
+
+  val(value) {
+    if (value === undefined) return this.els[0]?.value ?? '';
+    this.els.forEach((el) => { el.value = value; });
+    return this;
+  }
+
+  prop(name, value) {
+    if (value === undefined) return this.els[0]?.[name];
+    this.els.forEach((el) => { el[name] = value; });
+    return this;
+  }
+
+  attr(name, value) {
+    if (value === undefined) return this.els[0]?.getAttribute(name) ?? undefined;
+    this.els.forEach((el) => el.setAttribute(name, String(value)));
+    return this;
+  }
+
+  /** data(key) reads a stored value, else the `data-{key}` attribute (as a string); data(key, value) stores any value. */
+  data(key, value) {
+    if (value !== undefined) {
+      this.els.forEach((el) => {
+        if (!domData.has(el)) domData.set(el, new Map());
+        domData.get(el).set(key, value);
+      });
+      return this;
+    }
+    const el = this.els[0];
+    if (!el) return undefined;
+    const stored = domData.get(el);
+    if (stored?.has(key)) return stored.get(key);
+    return el.getAttribute?.(`data-${key}`) ?? undefined;
+  }
+
+  addClass(cls) { this.els.forEach((el) => el.classList.add(cls)); return this; }
+  removeClass(cls) { this.els.forEach((el) => el.classList.remove(cls)); return this; }
+
+  hide() {
+    this.els.forEach((el) => {
+      if (el.style.display !== 'none') domHiddenDisplay.set(el, el.style.display);
+      el.style.display = 'none';
+    });
+    return this;
+  }
+
+  show() {
+    this.els.forEach((el) => {
+      if (el.style.display === 'none') el.style.display = domHiddenDisplay.get(el) ?? '';
+    });
+    return this;
+  }
+
+  toggle(visible) { return visible ? this.show() : this.hide(); }
+
+  /** Nodes to insert for append/prepend/before — the first target gets the originals, any others get clones. */
+  _nodesFor(content, i) {
+    const nodes = dom(content).els;
+    return i === 0 ? nodes : nodes.map((n) => n.cloneNode(true));
+  }
+
+  append(content) { this.els.forEach((el, i) => el.append(...this._nodesFor(content, i))); return this; }
+  prepend(content) { this.els.forEach((el, i) => el.prepend(...this._nodesFor(content, i))); return this; }
+  before(content) { this.els.forEach((el, i) => el.before(...this._nodesFor(content, i))); return this; }
+  empty() { this.els.forEach((el) => el.replaceChildren()); return this; }
+  remove() { this.els.forEach((el) => el.remove()); return this; }
 }
 
 /**
@@ -422,7 +586,7 @@ async function fetchModulePrepare(moduleId) {
  * regardless of what the original attribute text was.
  */
 function captureChatLogHtml() {
-  const messages = ui.chat?.element ? $(ui.chat.element).find('li.chat-message') : $();
+  const messages = ui.chat?.element ? dom(ui.chat.element).find('li.chat-message') : dom();
   const html = messages.map((_, el) => {
     const clone = el.cloneNode(true);
     clone.querySelectorAll('img[src]').forEach((img) => {
@@ -492,10 +656,10 @@ async function uploadIconToFoundry(mediaId, cache) {
 
   try {
     const dir = `worlds/${game.world.id}/grfc-icons`;
-    await FilePicker.createDirectory('data', dir).catch(() => {});
+    await filePicker().createDirectory('data', dir).catch(() => {});
     const ext = ICON_MIME_EXT[blob.type] || 'png';
     const file = new File([blob], `icon-${mediaId}.${ext}`, { type: blob.type });
-    const result = await FilePicker.upload('data', dir, file, {}, { notify: false });
+    const result = await filePicker().upload('data', dir, file, {}, { notify: false });
     const path = result?.path || null;
     cache.set(mediaId, path);
     return path;
@@ -1309,7 +1473,7 @@ function applySpellUsage(itemData, spell) {
  */
 async function resolveCompendiumItem(compendiumRef) {
   if (!compendiumRef || !compendiumRef.entry_uuid) return null;
-  const source = await fromUuid(compendiumRef.entry_uuid);
+  const source = await uuidToDocument(compendiumRef.entry_uuid);
   if (!source) return null;
   const itemData = source.toObject();
   delete itemData._id;
@@ -2315,7 +2479,7 @@ class TestConnectionForm extends GrfcApplication {
 
   _onRender(context, options) {
     super._onRender(context, options);
-    const html = $(this.element);
+    const html = dom(this.element);
     html.find('.grfc-test-btn').on('click', async (event) => {
       event.preventDefault();
       const result = html.find('#grfc-result');
@@ -2393,7 +2557,7 @@ class ArchiveChatForm extends GrfcApplication {
 
   _onRender(context, options) {
     super._onRender(context, options);
-    const html = $(this.element);
+    const html = dom(this.element);
     const result = html.find('#grfc-archive-result');
 
     populateModuleSelect(
@@ -2515,7 +2679,7 @@ class CompendiumSyncForm extends GrfcApplication {
 
   _onRender(context, options) {
     super._onRender(context, options);
-    const html = $(this.element);
+    const html = dom(this.element);
     html.find('.grfc-sync-btn').on('click', async (event) => {
       event.preventDefault();
       const checked = html.find('.grfc-pack-check:checked').map((_, el) => el.value).get();
@@ -2561,7 +2725,7 @@ class CompendiumSyncForm extends GrfcApplication {
  * dialogs had — only the outer shell changed (v1.7.0's FormApplication → v2.0.0's
  * ApplicationV2), so this should behave identically to before, just reachable from
  * one place with five tabs instead of five menu entries. Each tab's DOM queries are
- * scoped to that tab's own container (a `tab` jQuery element passed into every method
+ * scoped to that tab's own container (a `tab` `dom()` wrapper passed into every method
  * below), never the whole dialog — several tabs reuse the same class names (e.g.
  * `.grfc-module-select` appears in four different tabs), so scoping is what keeps
  * them from colliding now that they all live in one document at once (inactive tabs
@@ -2619,7 +2783,7 @@ class ImportHubForm extends GrfcApplication {
 
   _onRender(context, options) {
     super._onRender(context, options);
-    const html = $(this.element);
+    const html = dom(this.element);
 
     // Explicit, self-contained tab switching — not FormApplication's built-in
     // options.tabs binding, which turned out not to actually switch panels (clicking
@@ -2631,9 +2795,9 @@ class ImportHubForm extends GrfcApplication {
     const panels = html.find('.grfc-hub-content > .tab');
     navItems.on('click', (event) => {
       event.preventDefault();
-      const tabName = $(event.currentTarget).data('tab');
+      const tabName = dom(event.currentTarget).data('tab');
       navItems.removeClass('active');
-      $(event.currentTarget).addClass('active');
+      dom(event.currentTarget).addClass('active');
       panels.removeClass('active').hide();
       panels.filter(`[data-tab="${tabName}"]`).addClass('active').show();
     });
@@ -2704,7 +2868,7 @@ class ImportHubForm extends GrfcApplication {
     let visible = 0;
 
     rows.each((_, el) => {
-      const row = $(el);
+      const row = dom(el);
       const matches = (query === '' || row.data('name').includes(query))
         && (category === '' || row.data('category') === category);
       row.toggle(matches);
@@ -2754,7 +2918,7 @@ class ImportHubForm extends GrfcApplication {
       const badge = (label, color) => `<span class="grfc-npc-sync-badge" style="flex:0 0 auto;font-size:.8em;color:${color};white-space:nowrap;">${label}</span>`;
       const syncBadgeHtml = !existingActor ? '' : isChanged ? badge('↻ Changed', '#b26a00') : badge('✓ Up to date', '#2e7d32');
 
-      const li = $(`
+      const li = dom(`
         <li data-name="${escapeHtml((npc.name || '').toLowerCase())}" data-category="${escapeHtml(npc.category || '')}" style="display:flex;align-items:center;gap:.5rem;padding:.35rem 0;border-bottom:1px solid #7773;">
           <span style="flex:1 1 auto;min-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
             <strong>${escapeHtml(npc.name)}</strong>
@@ -2930,7 +3094,7 @@ class ImportHubForm extends GrfcApplication {
         ? ` <span style="color:${budgetColor};font-weight:600;" title="${escapeHtml(`${budget.adjusted_xp} adjusted XP · ${budget.daily_percent}% of a level ${budget.level}, ${budget.party_size}-player daily budget`)}">${escapeHtml(budget.rating)}</span>`
         : '';
 
-      const li = $(`
+      const li = dom(`
         <li style="padding:.5rem 0;border-bottom:1px solid #7773;">
           <div style="display:flex;align-items:center;gap:.5rem;">
             <span style="flex:1 1 auto;min-width:0;">
@@ -3183,7 +3347,7 @@ class ImportHubForm extends GrfcApplication {
       const statusLabel = !existing ? 'New' : isChanged ? '↻ Changed' : '✓ Up to date';
       const statusColor = !existing ? 'var(--color-text-dark-secondary,#666)' : isChanged ? '#b26a00' : '#2e7d32';
 
-      const li = $(`
+      const li = dom(`
         <li data-gr-id="${handout.id}" style="display:flex;align-items:center;gap:.5rem;padding:.35rem 0;border-bottom:1px solid #7773;">
           <input type="checkbox" class="grfc-row-check" checked style="flex:0 0 auto;">
           <span style="flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
@@ -3202,15 +3366,15 @@ class ImportHubForm extends GrfcApplication {
   async _handoutsDoImport(tab) {
     const select = tab.find('.grfc-module-select');
     const moduleId = select.val();
-    const moduleTitle = select.find('option:selected').text();
+    const moduleTitle = select.find('option:checked').text();
     const folderId = tab.find('.grfc-handouts-folder-select').val() || null;
     const status = tab.find('#grfc-handouts-status');
     const importBtn = tab.find('.grfc-import-handouts-btn');
     if (!moduleId) return;
 
     const checkedIds = new Set(
-      tab.find('.grfc-handouts-list > li').filter((_, el) => $(el).find('.grfc-row-check').is(':checked'))
-        .map((_, el) => String($(el).data('gr-id'))).get()
+      tab.find('.grfc-handouts-list > li').filter((_, el) => dom(el).find('.grfc-row-check').is(':checked'))
+        .map((_, el) => String(dom(el).data('gr-id'))).get()
     );
     if (checkedIds.size === 0) {
       status.text('No handouts selected — check at least one to import.').css('color', '#b26a00');
@@ -3366,7 +3530,7 @@ class ImportHubForm extends GrfcApplication {
       // owned by this module, but embeddable here just like one of its own.
       const scopeTag = table.scope === 'world' ? ' 🌍 World library' : '';
 
-      const li = $(`
+      const li = dom(`
         <li data-gr-id="${table.id}" style="display:flex;align-items:center;gap:.5rem;padding:.35rem 0;border-bottom:1px solid #7773;">
           <input type="checkbox" class="grfc-row-check" checked style="flex:0 0 auto;">
           <span style="flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
@@ -3390,8 +3554,8 @@ class ImportHubForm extends GrfcApplication {
     if (!moduleId) return;
 
     const checkedIds = new Set(
-      tab.find('.grfc-roll-tables-list > li').filter((_, el) => $(el).find('.grfc-row-check').is(':checked'))
-        .map((_, el) => String($(el).data('gr-id'))).get()
+      tab.find('.grfc-roll-tables-list > li').filter((_, el) => dom(el).find('.grfc-row-check').is(':checked'))
+        .map((_, el) => String(dom(el).data('gr-id'))).get()
     );
     if (checkedIds.size === 0) {
       status.text('No tables selected — check at least one to import.').css('color', '#b26a00');
@@ -3584,7 +3748,7 @@ class ImportHubForm extends GrfcApplication {
 
       status.text(`✔ Done — ${summary}.`).css('color', '#2e7d32');
       ui.notifications.info(`Geektastic Realms Foundry Connect: imported adventure "${journal.name}" (${summary}).`);
-      journal.sheet.render(true);
+      journal.sheet.render({ force: true });
     } catch (err) {
       status.text(`✘ ${err.message}`).css('color', '#c62828');
       ui.notifications.error(`Geektastic Realms Foundry Connect: failed to import adventure — ${err.message}`);
@@ -3736,7 +3900,7 @@ class ImportHubForm extends GrfcApplication {
 
     rows.forEach((entry) => {
       const uuid = entry.uuid ?? `Compendium.${pack.collection}.${pack.documentName}.${entry._id}`;
-      const li = $(`
+      const li = dom(`
         <li data-name="${escapeHtml(entry.name.toLowerCase())}" style="display:flex;align-items:center;gap:.5rem;padding:.3rem .5rem;border-bottom:1px solid #7773;">
           <label style="display:flex;align-items:center;gap:.5rem;flex:1 1 auto;min-width:0;cursor:pointer;">
             <input type="checkbox" class="grfc-bestiary-check" value="${escapeHtml(uuid)}">
@@ -3755,7 +3919,7 @@ class ImportHubForm extends GrfcApplication {
   _bestiaryApplyFilter(tab) {
     const term = tab.find('.grfc-bestiary-filter').val().trim().toLowerCase();
     tab.find('.grfc-bestiary-list > li').each((_, el) => {
-      const li = $(el);
+      const li = dom(el);
       li.toggle(term === '' || li.data('name').includes(term));
     });
   }
@@ -3782,7 +3946,7 @@ class ImportHubForm extends GrfcApplication {
 
     const actors = [];
     for (const uuid of uuids) {
-      const doc = await fromUuid(uuid);
+      const doc = await uuidToDocument(uuid);
       if (doc) actors.push(doc);
     }
 
@@ -3882,14 +4046,13 @@ Hooks.once('init', () => {
  * `.directory-header` itself, then to the directory root) so the button still shows
  * up somewhere even if that specific container isn't found — not verified against a
  * live world, so worth confirming the button actually appears and lands somewhere
- * sensible. Wraps `html` in `$()` defensively in case a future Foundry version passes
- * a raw element to this hook instead of a jQuery object, the way classic-Application
- * render hooks have always done.
+ * sensible. Wraps `html` in `dom()`, which accepts both the HTMLElement ApplicationV2
+ * render hooks pass and the jQuery object older classic-Application hooks passed.
  */
 function addImportHubButton(html) {
-  const $html = html instanceof jQuery ? html : $(html);
+  const root = dom(html);
 
-  const button = $(
+  const button = dom(
     '<button type="button" class="grfc-hub-button" title="Open the Geektastic Realms import hub"><i class="fas fa-dragon"></i> Geektastic Realms</button>'
   );
   button.on('click', (event) => {
@@ -3897,14 +4060,14 @@ function addImportHubButton(html) {
     new ImportHubForm().render({ force: true });
   });
 
-  const actions = $html.find('.directory-header .action-buttons');
-  const header = $html.find('.directory-header');
+  const actions = root.find('.directory-header .action-buttons').first();
+  const header = root.find('.directory-header').first();
   if (actions.length) {
     actions.append(button);
   } else if (header.length) {
     header.append(button);
   } else {
-    $html.prepend(button);
+    root.prepend(button);
   }
 }
 
@@ -3928,12 +4091,12 @@ Hooks.on('renderJournalDirectory', (app, html) => addImportHubButton(html));
  * ApplicationV2 and the exact structure isn't confirmed against a live world.
  */
 function addArchiveChatButton(html) {
-  const $html = html instanceof jQuery ? html : $(html);
-  if ($html.find('.grfc-archive-chat-button').length) {
+  const root = dom(html);
+  if (root.find('.grfc-archive-chat-button').length) {
     return;
   }
 
-  const button = $(
+  const button = dom(
     '<button type="button" class="grfc-archive-chat-button" title="Archive this world\'s chat log to Geektastic Realms"><i class="fas fa-box-archive"></i> Archive Chat</button>'
   );
 
@@ -3941,7 +4104,7 @@ function addArchiveChatButton(html) {
   if (controls.length) {
     controls.prepend(button);
   } else {
-    $html.prepend(button);
+    root.prepend(button);
   }
 }
 
@@ -3951,7 +4114,7 @@ Hooks.on('renderChatLog', (app, html) => addArchiveChatButton(html));
 // .grfc-archive-chat-button instance is currently in the DOM always opens the
 // dialog, even though renderChatLog's frequent re-renders keep destroying and
 // recreating that button — a handler bound directly to one instance dies with it.
-$(document).on('click', '.grfc-archive-chat-button', (event) => {
+dom(document).on('click', '.grfc-archive-chat-button', (event) => {
   event.preventDefault();
   new ArchiveChatForm().render({ force: true });
 });

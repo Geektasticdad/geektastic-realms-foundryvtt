@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.12.0] - 2026-10-07
+
+Foundry v14 readiness: removes this module's last dependencies on APIs Foundry
+v14 deprecates.
+
+### Changed
+- **No more jQuery.** Foundry v13+ doesn't use jQuery itself and passes plain
+  HTMLElements to ApplicationV2 render hooks, so relying on the global `$`
+  would break this module whenever Foundry stops shipping it. Every dialog,
+  the sidebar Geektastic Realms / Archive Chat buttons and the chat capture
+  now go through a small built-in DOM helper (`dom()` in `scripts/main.js`)
+  that covers the same calls over native DOM. Behavior is unchanged.
+- **Namespaced Foundry APIs.** Image uploads use
+  `foundry.applications.apps.FilePicker.implementation` and compendium lookups
+  use `foundry.utils.fromUuid`, instead of the deprecated `FilePicker` and
+  `fromUuid` globals (with a fallback for builds that lack the namespaced
+  versions). Opening the imported adventure uses `render({ force: true })`
+  instead of the legacy `render(true)`.
+- `compatibility` stays `minimum: 13`, `verified: 14`.
+
+---
+
 ## [2.11.0] - 2026-10-07
 
 Catches up with Geektastic Realms v2.30–v3.0.
@@ -907,7 +929,8 @@ verification" checklist item.
   response).
 - Verified against Foundry VTT v13. Not yet tested against v14.
 
-[Unreleased]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.11.0...HEAD
+[Unreleased]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.12.0...HEAD
+[2.12.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.11.0...v2.12.0
 [2.11.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.10.0...v2.11.0
 [2.10.0]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.9.3...v2.10.0
 [2.9.3]: https://github.com/Geektasticdad/geektastic-realms-foundryvtt/compare/v2.9.2...v2.9.3

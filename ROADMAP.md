@@ -37,6 +37,9 @@ live world** too. Known debts, in rough order of risk:
   in v2.0.0 (Stage 15); `compatibility.verified` is now `14` (v2.0.2) on the strength
   of real Actors-tab usage, but the other four Import Hub tabs, the two settings
   dialogs, and the callout-block round-trip haven't been specifically confirmed yet.
+  v2.12.0 removed the jQuery dependency and the deprecated `FilePicker`/`fromUuid`
+  globals (v14 deprecates or may drop them); every tab needs one click-through on
+  v14 to confirm the new `dom()` helper behaves like jQuery did.
 
 ---
 

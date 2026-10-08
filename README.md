@@ -403,6 +403,12 @@ same markup means the same thing on both sides.
   `ImportHubForm`) extends `GrfcApplication` (`scripts/main.js`), which drops the HTML
   each one builds as a template literal into the window — no Handlebars templates, no
   build step. `ImportHubForm`'s tab switching is a small self-contained click handler.
+- No jQuery: Foundry v13+ passes plain HTMLElements to render hooks and is moving
+  away from the global `$`. DOM work goes through `dom()`, a small helper in
+  `scripts/main.js` covering the jQuery-style calls this module uses (selectors are
+  plain CSS, so use `:checked`, not jQuery's `:selected`). Foundry APIs are used by
+  their namespaced names (`foundry.applications.apps.FilePicker.implementation`,
+  `foundry.utils.fromUuid`), not the deprecated globals.
 - Imported Journal pages and handouts store GR's `content_hash` plus this module's
   `RENDER_VERSION`; bump that constant whenever the HTML rewriting changes so existing
   imports re-render once on the next import.
